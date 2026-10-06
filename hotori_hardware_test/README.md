@@ -11,6 +11,7 @@ Hotori（夢卵）は、猫をモチーフにしたデバイスです。体温�
 - 使用マイコン: Arduino Mega 2560
 - 開発形式: Arduinoスケッチ
 - 現在の主スケッチ: `hotori_hardware_test/hotori_hardware_test.ino`
+- 正式なピンアサイン資料: [`docs/PIN_ASSIGNMENT.md`](../docs/PIN_ASSIGNMENT.md)
 
 この文書では、確認状況を次のように区別します。
 
@@ -25,6 +26,7 @@ Hotori（夢卵）は、猫をモチーフにしたデバイスです。体温�
 - Arduino Mega 2560
 - TMC2209 × 2
 - ステッピングモータ × 2
+- Tail Limit Switch × 2（Left / Right、配線は[`docs/PIN_ASSIGNMENT.md`](../docs/PIN_ASSIGNMENT.md)を参照）
 - DFPlayer Mini
 - スピーカー
 - microSDカード
@@ -41,16 +43,18 @@ Hotori（夢卵）は、猫をモチーフにしたデバイスです。体温�
 
 ### Megaとの制御配線
 
-現在の実機と`HotoriConfig.h`で一致しているピン割り当てです。
+現在の実機と`HotoriConfig.h`で一致しているピン割り当てです。詳細とTail Limit Switchを含む正式な配線情報は[`docs/PIN_ASSIGNMENT.md`](../docs/PIN_ASSIGNMENT.md)を参照してください。
 
 | 対象 | TMC2209信号 | Arduino Mega 2560 |
 |---|---|---:|
-| Motor1 | STEP | D8 |
-| Motor1 | DIR | D9 |
-| Motor1 | EN | D10 |
-| Motor2 | STEP | D22 |
-| Motor2 | DIR | D23 |
-| Motor2 | EN | D24 |
+| Motor1 / Tail | STEP | D8 |
+| Motor1 / Tail | DIR | D9 |
+| Motor1 / Tail | EN | D10 |
+| Motor2 / Rib | STEP | D22 |
+| Motor2 / Rib | DIR | D23 |
+| Motor2 / Rib | EN | D24 |
+
+Motor1はしっぽ用、Motor2は肋骨／呼吸機構用です。Tail Limit Switchは左右2個（Left = D25、Right = D26）を使用し、両方`INPUT_PULLUP`とNC接点によりHIGH（押下／断線）を安全側として扱います。どちらかがHIGHなら回転方向に関係なくMotor1を停止してENを無効化し、両方がLOWへ戻っても自動再始動しません。正式な配線情報は[`docs/PIN_ASSIGNMENT.md`](../docs/PIN_ASSIGNMENT.md)を参照してください。
 
 ENはLOWアクティブです。
 
@@ -207,12 +211,12 @@ Serial Monitorへコマンドを1行ずつ送信します。行末は`Newline`�
 
 | コマンド | 動作 |
 |---|---|
-| `m1f` | Motor1 Forward。ドライバを有効化して正転 |
-| `m1r` | Motor1 Reverse。ドライバを有効化して逆転 |
-| `m1s` | Motor1 Stop。STEPを停止してドライバを無効化 |
-| `m2f` | Motor2 Forward。ドライバを有効化して正転 |
-| `m2r` | Motor2 Reverse。ドライバを有効化して逆転 |
-| `m2s` | Motor2 Stop。STEPを停止してドライバを無効化 |
+| `m1f` | Motor1 / Tail Forward。左右どちらかのTail LimitがHIGHなら開始を拒否 |
+| `m1r` | Motor1 / Tail Reverse。左右どちらかのTail LimitがHIGHなら開始を拒否 |
+| `m1s` | Motor1 / Tail Stop。STEPを停止してドライバを無効化 |
+| `m2f` | Motor2 / Rib Forward。ドライバを有効化して正転 |
+| `m2r` | Motor2 / Rib Reverse。ドライバを有効化して逆転 |
+| `m2s` | Motor2 / Rib Stop。STEPを停止してドライバを無効化 |
 | `p1` | `/mp3/0001.mp3`を再生 |
 | `p2` | `/mp3/0002.mp3`を再生 |
 | `stop` | DFPlayerの再生を停止 |
@@ -283,6 +287,10 @@ arduino-cli upload -p COMx --fqbn arduino:avr:mega dfplayer_min_test
 - Motor2 Reverse
 - Motor2 Stop
 - Stop時にENが無効となり、保持トルクが解除されること
+- 左右Tail LimitによるMotor1の安全停止（Left / Rightのどちらでも、Forward / Reverseに関係なく停止）
+- Limit作動時にTMC2209 #1のENが無効化され、Motor1の保持トルクが解除されること
+- スイッチを離してもMotor1が自動再始動せず、Limit作動中は`m1f` / `m1r`の両方が拒否されること
+- 左右Tail Limit対応後もMotor2とDFPlayerの既存動作に問題がないこと
 - DFPlayer Miniの起動
 - `/mp3/0001.mp3`の再生
 - `/mp3/0002.mp3`の再生
@@ -339,6 +347,8 @@ Arduino IDEや`arduino-cli monitor`がCOMポートを使用していると、ア
 ```text
 tail/
 ├── .gitignore
+├── docs/
+│   └── PIN_ASSIGNMENT.md
 ├── dfplayer_min_test/
 │   └── dfplayer_min_test.ino
 ├── hotori_hardware_test/
@@ -357,6 +367,7 @@ tail/
 
 | ファイル | 役割 |
 |---|---|
+| `docs/PIN_ASSIGNMENT.md` | Hotoriの正式なピンアサインと配線資料 |
 | `hotori_hardware_test/hotori_hardware_test.ino` | 各コンポーネントを生成し、初期化、Serialコマンド振り分け、毎ループの更新を行う |
 | `hotori_hardware_test/HotoriConfig.h` | ピン番号、STEP周期、Serial速度、DFPlayer音量をまとめる |
 | `hotori_hardware_test/StepDirMotor.h/.cpp` | TMC2209をSTEP、DIR、ENで非ブロッキング制御する |

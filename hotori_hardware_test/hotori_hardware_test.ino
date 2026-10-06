@@ -22,6 +22,57 @@ StepDirMotor motor2(HotoriConfig::MOTOR2_STEP_PIN,
 
 DfPlayerController dfPlayer;
 SerialCommandReader commandReader;
+// Bit 0 = left active, bit 1 = right active.
+uint8_t tailLimitStateReported = 0;
+
+uint8_t readTailLimitState() {
+  const bool leftActive =
+      digitalRead(HotoriConfig::TAIL_LEFT_LIMIT_PIN) ==
+      HotoriConfig::TAIL_LIMIT_ACTIVE_LEVEL;
+  const bool rightActive =
+      digitalRead(HotoriConfig::TAIL_RIGHT_LIMIT_PIN) ==
+      HotoriConfig::TAIL_LIMIT_ACTIVE_LEVEL;
+  return (leftActive ? 1 : 0) | (rightActive ? 2 : 0);
+}
+
+void reportTailLimitStopped(uint8_t state) {
+  if (state == 3) {
+    Serial.println(F("[TAIL LIMIT] Both active; Motor1 stopped and disabled."));
+  } else if (state == 1) {
+    Serial.println(F("[TAIL LIMIT] Left active; Motor1 stopped and disabled."));
+  } else if (state == 2) {
+    Serial.println(F("[TAIL LIMIT] Right active; Motor1 stopped and disabled."));
+  }
+}
+
+void serviceTailLimit() {
+  const uint8_t state = readTailLimitState();
+
+  if (state != 0) {
+    // Stop before logging; never wait for debounce or check direction.
+    motor1.stop();
+    if (state != tailLimitStateReported) {
+      reportTailLimitStopped(state);
+    }
+  }
+
+  tailLimitStateReported = state;
+}
+
+bool rejectMotor1StartIfTailLimitActive() {
+  const uint8_t state = readTailLimitState();
+  if (state == 0) {
+    return false;
+  }
+
+  motor1.stop();
+  if (state != tailLimitStateReported) {
+    reportTailLimitStopped(state);
+  }
+  tailLimitStateReported = state;
+  Serial.println(F("[TAIL LIMIT] Active; Motor1 start rejected."));
+  return true;
+}
 
 void printHelp() {
   Serial.println(F("Commands:"));
@@ -40,9 +91,15 @@ void printHelp() {
 
 void handleCommand(const char* command) {
   if (strcmp(command, "m1f") == 0) {
+    if (rejectMotor1StartIfTailLimitActive()) {
+      return;
+    }
     motor1.startForward();
     Serial.println(F("[Motor 1] Forward."));
   } else if (strcmp(command, "m1r") == 0) {
+    if (rejectMotor1StartIfTailLimitActive()) {
+      return;
+    }
     motor1.startReverse();
     Serial.println(F("[Motor 1] Reverse."));
   } else if (strcmp(command, "m1s") == 0) {
@@ -75,11 +132,18 @@ void handleCommand(const char* command) {
 void setup() {
   Serial.begin(HotoriConfig::DEBUG_BAUD_RATE);
 
+  pinMode(HotoriConfig::TAIL_LEFT_LIMIT_PIN, INPUT_PULLUP);
+  pinMode(HotoriConfig::TAIL_RIGHT_LIMIT_PIN, INPUT_PULLUP);
   motor1.begin();
   motor2.begin();
   Serial.println(F("\nHotori hardware test starting..."));
   Serial.println(F("[OK] Motor pins initialized; both drivers are disabled."));
   Serial.println(F("[INFO] STEP/DIR mode has no driver feedback; verify motor response physically."));
+
+  serviceTailLimit();
+  if (tailLimitStateReported == 0) {
+    Serial.println(F("[OK] Tail left/right limits ready (normal LOW)."));
+  }
 
   dfPlayer.begin(Serial1, Serial);
   printHelp();
@@ -88,6 +152,7 @@ void setup() {
 void loop() {
   // Each service is short and non-blocking, so both motors, audio events, and
   // new commands continue to be processed independently.
+  serviceTailLimit();
   motor1.update();
   motor2.update();
   dfPlayer.update();
