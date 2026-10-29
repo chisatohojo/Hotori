@@ -1,0 +1,20 @@
+{
+  "files.encoding": "utf8",
+  "files.eol": "\n",
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "files.associations": {
+    "*.ino": "cpp"
+  },
+  "editor.tabSize": 2,
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/hotori_hardware_test/compile_commands.json",
+  "search.exclude": {
+    "build": true
+  },
+  "[markdown]": {
+    "files.trimTrailingWhitespace": false
+  },
+  "[powershell]": {
+    "editor.tabSize": 4
+  }
+}

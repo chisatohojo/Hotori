@@ -187,12 +187,12 @@ mp3/
 
 ## 開発環境と依存ライブラリ
 
-2026年10月3日に現在の環境で確認したバージョンです。
+2026年10月29日に現在の環境で確認したバージョンです。セットアップとVS Codeの使い方は[プロジェクト直下のREADME](../README.md)を参照してください。
 
 | 項目 | バージョン |
 |---|---:|
 | Arduino CLI | 1.5.1 |
-| Arduino AVR Boards | 1.8.8 |
+| Arduino AVR Boards | 1.8.6 |
 | DFRobotDFPlayerMini | 1.0.6 |
 
 DFRobotDFPlayerMiniが未導入の場合:

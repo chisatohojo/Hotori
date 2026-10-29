@@ -1,0 +1,49 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Hotori: Build hardware test",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/build.ps1"],
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "Hotori: Build all sketches",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/build.ps1", "-Sketch", "all"],
+      "group": "build",
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "Hotori: Setup dependencies",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/setup.ps1"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Hotori: List boards",
+      "type": "process",
+      "command": "arduino-cli",
+      "args": ["board", "list"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Hotori: Serial monitor (115200)",
+      "type": "process",
+      "command": "arduino-cli",
+      "args": ["monitor", "-p", "${input:serialPort}", "-c", "baudrate=115200"],
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "serialPort",
+      "type": "promptString",
+      "description": "Enter the Mega 2560 port from 'Hotori: List boards' (for example COM4)"
+    }
+  ]
+}
