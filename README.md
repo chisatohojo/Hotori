@@ -3,6 +3,7 @@
 Arduino Mega 2560、TMC2209 × 2、DFPlayer Miniを使ったデバイスです。現在はハードウェア単体確認フェーズです。
 
 - 本番制御（ESP32 UART受信）: [`hotori_runtime`](hotori_runtime/README.md)
+- ESP32 UART検査（PCの文字コマンドをMega用フレームへ変換）: [`hotori_esp32_uart_test`](hotori_esp32_uart_test/README.md)
 - デバッグ・単体試験: [`hotori_hardware_test`](hotori_hardware_test/README.md)
 - 正式な配線資料: [`docs/PIN_ASSIGNMENT.md`](docs/PIN_ASSIGNMENT.md)
 - ピン・動作設定: [`HotoriConfig.h`](hotori_hardware_test/HotoriConfig.h)
@@ -28,6 +29,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup.ps1
 
 セットアップはユーザー共通のArduino環境に上記バージョンを導入します。既に同じバージョンが入っている場合は、そのままビルドできます。
 
+ESP32 UART検査は別の環境を使用します。2026年11月1日の実機試験で使用した環境はArduino IDE **2.3.6**、**esp32 by Espressif Systems 3.3.12**、ESP32-WROOM-32D / **ESP32 Dev Module**（FQBN `esp32:esp32:esp32`）です。[ESP32用README](hotori_esp32_uart_test/README.md)にボードパッケージ・CP210xドライバの導入、配線、コマンドを記載しています。[実機試験記録](hotori_esp32_uart_test/VALIDATION.md)では通信・音声のPASSと、Tailの振動・脱調および未完了のモータ試験を区別しています。
+
 ## ビルド
 
 ```powershell
@@ -36,6 +39,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build.ps1
 
 # 本番制御（既存スクリプトはデバッグスケッチ用のため直接指定）
 arduino-cli compile --fqbn arduino:avr:mega:cpu=atmega2560 --warnings all --build-path build/hotori_runtime hotori_runtime
+
+# ESP32 UART検査（ESP32パッケージ3.3.12を導入済みの場合）
+arduino-cli compile --fqbn esp32:esp32:esp32 --warnings all --build-path build/hotori_esp32_uart_test hotori_esp32_uart_test
 
 # DFPlayer単体確認用
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build.ps1 -Sketch dfplayer_min_test
