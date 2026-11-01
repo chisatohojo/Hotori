@@ -10,7 +10,8 @@ class DfPlayerController {
  public:
   DfPlayerController();
   void begin(HardwareSerial& port, Print& log);
-  bool enqueue(uint8_t voiceId);
+  // Replace any unsent request, including stop and repeated IDs.
+  void setVoice(uint8_t voiceId);
   void update();
 
  private:
@@ -24,9 +25,8 @@ class DfPlayerController {
   State state_;
   uint32_t bootMs_;
   uint32_t lastSentMs_;
-  uint8_t queue_[HotoriRuntimeConfig::DFPLAYER_QUEUE_CAPACITY];
-  uint8_t head_;
-  uint8_t count_;
+  uint8_t pendingVoice_;
+  bool voicePending_;
   uint8_t response_[10];
   uint8_t received_;
 };

@@ -20,8 +20,6 @@ BreathController breath(breathMotor, runtimeLog,
 DfPlayerController dfPlayer;
 UartFrameReceiver receiver;
 RuntimeCommand receivedCommand = {};
-bool voicePending = false;
-uint8_t pendingVoice = 0;
 
 void reportUartError(UartFrameReceiver::Result result) {
   runtimeLog.print(F("[UART ERROR] "));
@@ -45,11 +43,7 @@ void applyCommand(const RuntimeCommand& command) {
   }
   if (command.flags & UartFrameReceiver::BREATH_FLAG) breath.apply(command.breath);
   if (command.flags & UartFrameReceiver::VOICE_FLAG) {
-    if (!dfPlayer.enqueue(command.voice)) {
-      pendingVoice = command.voice;
-      voicePending = true;
-      runtimeLog.println(F("[VOICE] Output queue full; deferring UART consumption."));
-    }
+    dfPlayer.setVoice(command.voice);
   }
   runtimeLog.print(F("[UART] Valid frame flags=0x"));
   if (command.flags < 16) runtimeLog.print('0');
@@ -70,11 +64,7 @@ void setup() {
 void loop() {
   tail.update();
   breath.update();
-  dfPlayer.update();
-
-  if (voicePending) {
-    if (dfPlayer.enqueue(pendingVoice)) voicePending = false;
-  } else if (Serial2.available() > 0) {
+  if (Serial2.available() > 0) {
     // One byte per pass: no input flood can monopolize STEP/limit servicing.
     const UartFrameReceiver::Result result =
         receiver.feed(static_cast<uint8_t>(Serial2.read()), receivedCommand);
@@ -84,6 +74,8 @@ void loop() {
 
   tail.update();
   breath.update();
+  // A newly validated VOICE replaces pending output before the next send.
+  dfPlayer.update();
   runtimeLog.update(Serial);
   // No communication watchdog: silence is normal for change-only commands.
   // Serial2 is receive-only; no ACK or other data is transmitted to the ESP32.

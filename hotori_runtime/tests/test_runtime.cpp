@@ -80,11 +80,23 @@ void crcAndParser() {
     CHECK(std::memcmp(&command, &original, sizeof(command)) == 0);
     CHECK(feed(parser, command, frame()) == UartFrameReceiver::Valid);
   }
+  // Exhaust every byte value, including atomic rejection and recovery.
+  for (unsigned id = 0; id <= 255; ++id) {
+    UartFrameReceiver parser;
+    RuntimeCommand command = {7,3,12,2,88,44};
+    const RuntimeCommand original = command;
+    CHECK(feed(parser, command, frame(7,id)) ==
+          (id <= 7 ? UartFrameReceiver::Valid : UartFrameReceiver::InvalidVoice));
+    if (id <= 7) CHECK(command.voice == id);
+    else CHECK(std::memcmp(&command, &original, sizeof(command)) == 0);
+    CHECK(feed(parser, command, frame(6,id)) == UartFrameReceiver::Valid);
+    CHECK(feed(parser, command, frame()) == UartFrameReceiver::Valid);
+  }
   // Even out-of-range/header-looking unselected fields are ignored.
   const std::vector<uint8_t> selectedOnly[] = {
-    frame(1,254,255,255,255,255), frame(2,255,60,255,255,255),
-    frame(4,255,255,3,100,255), frame(1,0xAA,0x55,255,255,255),
-    frame(7,254,60,3,100,255), frame(7,0,0,0,0,0)
+    frame(1,7,255,255,255,255), frame(2,255,60,255,255,255),
+    frame(4,255,255,3,100,255), frame(2,0xAA,0x14,0xAA,0x55,255),
+    frame(7,7,60,3,100,255), frame(7,0,0,0,0,0)
   };
   for (const auto& bytes : selectedOnly) {
     UartFrameReceiver parser; RuntimeCommand command = {};
@@ -122,13 +134,25 @@ void motorsAndTail() {
   TailController control(motor, log); control.begin();
   CHECK(fake::modes[25] == INPUT_PULLUP && fake::modes[26] == INPUT_PULLUP);
   CHECK(TailController::halfPeriodForSpeed(0) == 0);
-  CHECK(TailController::halfPeriodForSpeed(1) == 20000);
-  CHECK(TailController::halfPeriodForSpeed(100) == 5000);
+  CHECK(TailController::halfPeriodForSpeed(1) == 2000);
+  CHECK(TailController::halfPeriodForSpeed(100) == 500);
+  CHECK(TailController::halfPeriodForSpeed(50) == 804);
+  CHECK(TailController::halfPeriodForSpeed(34) == 1000);  // 500 steps/s.
+  CHECK(TailController::halfPeriodForSpeed(101) == 0);
   for (uint8_t speed = 2; speed <= 100; ++speed) {
     const uint32_t half = TailController::halfPeriodForSpeed(speed);
     CHECK(half < TailController::halfPeriodForSpeed(speed - 1));
-    const double rate = 25.0 + 75.0 * (speed - 1) / 99.0;
-    CHECK(std::abs(500000.0 / half - rate) < 0.021);
+    const double rate = 250.0 + 750.0 * (speed - 1) / 99.0;
+    CHECK(half == static_cast<uint32_t>(500000.0 / rate + 1e-9));
+    CHECK(std::abs(500000.0 / half - rate) < 2.0);
+  }
+  for (uint8_t speed : {uint8_t(1), uint8_t(34), uint8_t(100)}) {
+    control.apply(1,speed,30);
+    const uint32_t half = motor.halfPeriodUs();
+    fake::us += half - 1; control.update(); CHECK(fake::pins[8] == LOW);
+    ++fake::us; control.update(); CHECK(fake::pins[8] == HIGH);
+    fake::us += half - 1; control.update(); CHECK(fake::pins[8] == HIGH);
+    ++fake::us; control.update(); CHECK(fake::pins[8] == LOW);
   }
   const uint8_t times[] = {1,10,30,255};
   for (uint8_t time : times) {
@@ -140,7 +164,7 @@ void motorsAndTail() {
       control.apply(direction,100,30);
       CHECK(motor.isRunning());
       CHECK(fake::pins[9] == (direction == 1 ? HIGH : LOW));
-      fake::us += 5000; control.update(); CHECK(fake::pins[8] == HIGH);
+      fake::us += 500; control.update(); CHECK(fake::pins[8] == HIGH);
       fake::pins[limit] = HIGH;
       const size_t before = fake::events.size();
       control.update();
@@ -239,22 +263,50 @@ void audioAndLog() {
   audio.begin(Serial1,log);
   CHECK(fake::ms == 0 && Serial1.baud == 9600);
   checkDfPacket(Serial1.tx,0,0x16,0);
-  CHECK(audio.enqueue(3) && audio.enqueue(3) && audio.enqueue(0));
+  audio.setVoice(1); audio.setVoice(3); audio.setVoice(7);
   fake::advanceMs(1499); audio.update(); CHECK(Serial1.tx.size() == 10);
   fake::advanceMs(1); audio.update(); checkDfPacket(Serial1.tx,10,0x06,20);
   fake::advanceMs(10); audio.update(); checkDfPacket(Serial1.tx,20,0x16,0);
   fake::advanceMs(10); Serial1.room = 9; audio.update(); CHECK(Serial1.tx.size() == 30);
-  Serial1.room = 64; audio.update(); checkDfPacket(Serial1.tx,30,0x12,3);
-  audio.update(); CHECK(Serial1.tx.size() == 40);
-  fake::advanceMs(10); audio.update(); checkDfPacket(Serial1.tx,40,0x12,3);
-  fake::advanceMs(10); audio.update(); checkDfPacket(Serial1.tx,50,0x16,0);
-  fake::advanceMs(100000); audio.update(); CHECK(Serial1.tx.size() == 60);
-  for (unsigned i = 0; i < HotoriRuntimeConfig::DFPLAYER_QUEUE_CAPACITY; ++i) CHECK(audio.enqueue(1));
-  CHECK(!audio.enqueue(2));
+  Serial1.room = 10; audio.update(); checkDfPacket(Serial1.tx,30,0x12,7);
+  // Switch during playback, with no finished response or track-duration wait.
+  audio.setVoice(2); audio.update(); CHECK(Serial1.tx.size() == 40);
+  fake::advanceMs(9); audio.update(); CHECK(Serial1.tx.size() == 40);
+  fake::advanceMs(1); audio.update(); checkDfPacket(Serial1.tx,40,0x12,2);
+  audio.setVoice(2); fake::advanceMs(10); audio.update();
+  checkDfPacket(Serial1.tx,50,0x12,2);  // Same ID restarts with another play command.
+  // Blocked output retains only the latest request; stop erases old plays.
+  Serial1.room = 0;
+  for (unsigned i = 0; i < 40; ++i) { audio.setVoice(1 + i % 7); audio.update(); }
+  audio.setVoice(0); audio.update(); CHECK(Serial1.tx.size() == 60);
+  fake::advanceMs(10); Serial1.room = 9; audio.update(); CHECK(Serial1.tx.size() == 60);
+  Serial1.room = 10; audio.update(); checkDfPacket(Serial1.tx,60,0x16,0);
+  fake::advanceMs(100000); audio.update(); CHECK(Serial1.tx.size() == 70);
+  // Exercise every supported ID on the wire, with stop followed by play too.
+  for (uint8_t id = 0; id <= 7; ++id) {
+    audio.setVoice(id); fake::advanceMs(10); audio.update();
+    checkDfPacket(Serial1.tx,70 + id * 10,id == 0 ? 0x16 : 0x12,id);
+  }
   // Valid DFPlayer error response, including its checksum.
   const uint8_t response[] = {0x7E,0xFF,0x06,0x40,0,0,6,0xFE,0xB5,0xEF};
   for (uint8_t byte : response) { Serial1.rx.push_back(byte); audio.update(); }
   CHECK(log.text.find("[DFPlayer ERROR] Code=6") != std::string::npos);
+  // A late finish response from an older track is diagnostic only.
+  const uint8_t finished[] = {0x7E,0xFF,0x06,0x3D,0,0,2,0xFE,0xBC,0xEF};
+  const size_t beforeFinished = Serial1.tx.size();
+  for (uint8_t byte : finished) { Serial1.rx.push_back(byte); audio.update(); }
+  fake::advanceMs(10); audio.update(); CHECK(Serial1.tx.size() == beforeFinished);
+  CHECK(log.text.find("Track finished: 2") != std::string::npos);
+
+  // Boot-time stop supersedes every earlier play, even beyond old capacity.
+  fake::reset();
+  DfPlayerController bootStop; bootStop.begin(Serial1,log);
+  for (unsigned i = 0; i < 40; ++i) bootStop.setVoice(1 + i % 7);
+  bootStop.setVoice(0);
+  fake::advanceMs(1500); bootStop.update();
+  fake::advanceMs(10); bootStop.update();
+  fake::advanceMs(10); bootStop.update(); checkDfPacket(Serial1.tx,30,0x16,0);
+  fake::advanceMs(60000); bootStop.update(); CHECK(Serial1.tx.size() == 40);
 
   RuntimeLog buffered;
   HardwareSerial debug;
@@ -312,31 +364,90 @@ void runtimeIntegration() {
   CHECK(breath.breathsPerMinute() == 0 && !breathMotor.isRunning() && !tailMotor.isRunning());
   fake::advanceMs(60000); loop();
   CHECK(Serial2.tx.empty());
-  // Drain audio and assert only VALID selected Voice commands were enqueued.
+  // Drain audio: superseded boot-time requests must never be sent later.
   for (int i = 0; i < 20; ++i) { fake::advanceMs(10); loop(); }
   std::vector<uint8_t> voiceIds;
   for (size_t i = 0; i + 9 < Serial1.tx.size(); i += 10) {
     if (Serial1.tx[i + 3] == 0x12) voiceIds.push_back(Serial1.tx[i + 6]);
   }
-  CHECK((voiceIds == std::vector<uint8_t>{2,3}));
-  // Audio queue saturation holds the next voice command, without waiting in
-  // loop or dropping repeated IDs. Motor/timer servicing continues meanwhile.
+  CHECK(voiceIds.empty());  // Boot-time plays were superseded by the final stop.
+  // Blocked audio never holds up UART or Motor2/Tail updates.
   Serial1.room = 0;
-  for (unsigned i = 0; i < HotoriRuntimeConfig::DFPLAYER_QUEUE_CAPACITY + 1; ++i) {
-    sendToRuntime(frame(1,5,0,0,0,0));
-  }
-  CHECK(voicePending);
-  sendToRuntime(frame(4,0,0,1,100,1));
-  for (unsigned i = 0; i < 100; ++i) { fake::advanceMs(10); loop(); }
-  CHECK(!voicePending && Serial2.rx.empty() && !tailMotor.isRunning());
-  unsigned repeated = 0;
-  for (size_t i = 0; i + 9 < Serial1.tx.size(); i += 10) {
-    if (Serial1.tx[i + 3] == 0x12 && Serial1.tx[i + 6] == 5) ++repeated;
-  }
-  CHECK(repeated == HotoriRuntimeConfig::DFPLAYER_QUEUE_CAPACITY + 1);
+  for (unsigned i = 0; i < 40; ++i) sendToRuntime(frame(1,5,0,0,0,0));
+  CHECK(Serial2.rx.empty());
+  sendToRuntime(frame(4,0,0,1,100,1)); CHECK(tailMotor.isRunning());
+  sendToRuntime(frame(2,255,30)); CHECK(breath.breathsPerMinute() == 30);
+  sendToRuntime(frame(1,0));
+  const size_t beforeStop = Serial1.tx.size();
+  fake::advanceMs(100); loop();
+  CHECK(!tailMotor.isRunning() && Serial2.rx.empty());
+  checkDfPacket(Serial1.tx,beforeStop,0x16,0);
+  fake::advanceMs(60000); loop(); CHECK(Serial1.tx.size() == beforeStop + 10);
   CHECK(Serial2.tx.empty());
-  std::cout << "PASS integration: partial updates, atomic rejection, silence, queue pressure, no ACK\n";
+  std::cout << "PASS integration: partial updates, atomic rejection, silence, latest voice under TX pressure, no ACK\n";
 }
+
+void runtimeVoicePriority() {
+  fake::reset(); setup();
+  fake::advanceMs(1500); loop();
+  fake::advanceMs(10); loop();
+  // All accepted IDs, including repeat, are delivered on a fresh command.
+  for (uint8_t id = 0; id <= 7; ++id) {
+    fake::advanceMs(10);
+    const size_t before = Serial1.tx.size();
+    sendToRuntime(frame(1,id));
+    checkDfPacket(Serial1.tx,before,id == 0 ? 0x16 : 0x12,id);
+    fake::advanceMs(10); sendToRuntime(frame(1,id));
+    checkDfPacket(Serial1.tx,before + 10,id == 0 ? 0x16 : 0x12,id);
+  }
+  // A newer frame completed on the send deadline replaces a blocked request.
+  Serial1.room = 0; sendToRuntime(frame(1,3));
+  const auto newest = frame(1,6);
+  for (size_t i = 0; i < 8; ++i) { Serial2.rx.push_back(newest[i]); loop(); }
+  const size_t beforeNewest = Serial1.tx.size();
+  fake::advanceMs(10); Serial2.rx.push_back(newest[8]); loop();
+  checkDfPacket(Serial1.tx,beforeNewest,0x12,6);
+  fake::advanceMs(10000); loop(); CHECK(Serial1.tx.size() == beforeNewest + 10);
+  // All unsupported IDs reject Voice, Breath AND Tail together.
+  sendToRuntime(frame(6,0,30,1,50,255));
+  const uint32_t period = tailMotor.halfPeriodUs();
+  Serial1.room = 0; sendToRuntime(frame(1,4));
+  for (unsigned id = 8; id <= 255; ++id) {
+    sendToRuntime(frame(7,id,0,0,0,0));
+    CHECK(tailMotor.isRunning() && tailMotor.halfPeriodUs() == period);
+    CHECK(breath.breathsPerMinute() == 30);
+  }
+  const size_t beforeValid = Serial1.tx.size();
+  fake::advanceMs(10); loop(); checkDfPacket(Serial1.tx,beforeValid,0x12,4);
+  // VOICE not selected preserves pending voice even with an invalid ID byte.
+  Serial1.room = 0; sendToRuntime(frame(1,5));
+  sendToRuntime(frame(6,255,20,2,100,255));
+  const size_t beforeUnselected = Serial1.tx.size();
+  fake::advanceMs(10); loop(); checkDfPacket(Serial1.tx,beforeUnselected,0x12,5);
+  // Either NC limit must disable before processing even one queued UART byte.
+  for (uint8_t direction = 1; direction <= 3; ++direction) {
+    for (uint8_t speed : {uint8_t(1), uint8_t(50), uint8_t(100)}) {
+      for (uint8_t limit = 25; limit <= 26; ++limit) {
+        sendToRuntime(frame(4,0,0,direction,speed,255));
+        CHECK(tailMotor.isRunning());
+        fake::us += tailMotor.halfPeriodUs(); loop(); CHECK(fake::pins[8] == HIGH);
+        Serial.room = Serial1.room = 0;
+        fake::pins[limit] = HIGH;
+        Serial2.onRead = []() { CHECK(!tailMotor.isRunning()); CHECK(fake::pins[10] == HIGH); };
+        Serial2.rx.push_back(0); loop();
+        CHECK(fake::pins[8] == LOW && fake::pins[10] == HIGH);
+        Serial2.onRead = nullptr;
+        sendToRuntime(frame(4,0,0,direction,speed,255)); CHECK(!tailMotor.isRunning());
+        fake::pins[limit] = LOW;
+        sendToRuntime(frame(4,0,0,0,0,0));
+      }
+    }
+  }
+  sendToRuntime(frame(7,0,0,0,0,0));
+  CHECK(Serial2.tx.empty());
+  std::cout << "PASS integration: IDs 0..255, repeat/switch/stop, send deadline priority, limit before UART\n";
+}
+
 }
 
 int main() {
@@ -346,6 +457,7 @@ int main() {
     breathCalibration();
     audioAndLog();
     runtimeIntegration();
+    runtimeVoicePriority();
     std::cout << "PASS " << assertions << " assertions (host GPIO/clock/UART mocks; no hardware used)\n";
     return 0;
   } catch (const std::exception& error) {

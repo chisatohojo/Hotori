@@ -18,8 +18,8 @@ constexpr uint8_t TAIL_LIMIT_ACTIVE_LEVEL = HIGH;
 
 // Confirm left/right on the mechanism; change only this to reverse Tail.
 constexpr bool TAIL_LEFT_USES_FORWARD = true;
-constexpr uint32_t TAIL_MIN_STEPS_PER_SECOND = 25;
-constexpr uint32_t TAIL_MAX_STEPS_PER_SECOND = 100;
+constexpr uint32_t TAIL_MIN_STEPS_PER_SECOND = 250;
+constexpr uint32_t TAIL_MAX_STEPS_PER_SECOND = 1000;
 
 // Measure complete mechanical breaths before enabling Motor2. No guessed value.
 constexpr uint32_t BREATH_STEPS_PER_CYCLE = 0;
@@ -33,6 +33,6 @@ constexpr uint8_t DFPLAYER_VOLUME = 20;
 constexpr uint32_t DFPLAYER_STARTUP_MS = 1500;
 // DFRobotDFPlayerMini 1.0.6 uses a 10 ms interval in its no-ACK path.
 constexpr uint32_t DFPLAYER_COMMAND_GAP_MS = 10;
-constexpr uint8_t DFPLAYER_QUEUE_CAPACITY = 16;
+constexpr uint8_t VOICE_MAX_ID = 7;
 
 }  // namespace HotoriRuntimeConfig

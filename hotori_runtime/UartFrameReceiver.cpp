@@ -1,5 +1,7 @@
 #include "UartFrameReceiver.h"
 
+#include "HotoriRuntimeConfig.h"
+
 UartFrameReceiver::UartFrameReceiver() : buffer_{}, length_(0) {}
 
 uint8_t UartFrameReceiver::crc8(const uint8_t* data, size_t length) {
@@ -18,7 +20,7 @@ UartFrameReceiver::Result UartFrameReceiver::validate() const {
   if (crc8(buffer_ + 2, 6) != buffer_[8]) return CrcMismatch;
   const uint8_t flags = buffer_[2];
   if (flags == 0 || (flags & 0xF8) != 0) return InvalidFlags;
-  if ((flags & VOICE_FLAG) && buffer_[3] == 255) return InvalidVoice;
+  if ((flags & VOICE_FLAG) && buffer_[3] > HotoriRuntimeConfig::VOICE_MAX_ID) return InvalidVoice;
   if ((flags & BREATH_FLAG) && buffer_[4] > 60) return InvalidBreath;
   if (flags & TAIL_FLAG) {
     if (buffer_[5] > 3) return InvalidTailDir;

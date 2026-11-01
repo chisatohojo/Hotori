@@ -2,7 +2,7 @@
 
 DfPlayerController::DfPlayerController()
     : port_(nullptr), log_(nullptr), state_(BootWait), bootMs_(0), lastSentMs_(0),
-      queue_{}, head_(0), count_(0), response_{}, received_(0) {}
+      pendingVoice_(0), voicePending_(false), response_{}, received_(0) {}
 
 void DfPlayerController::begin(HardwareSerial& port, Print& log) {
   port_ = &port;
@@ -11,17 +11,16 @@ void DfPlayerController::begin(HardwareSerial& port, Print& log) {
   bootMs_ = millis();
   lastSentMs_ = bootMs_;
   state_ = BootWait;
-  head_ = count_ = received_ = 0;
+  pendingVoice_ = received_ = 0;
+  voicePending_ = false;
   // Also stop a module that stayed powered while only the Mega reset.
   send(0x16, 0);
   log_->println(F("[DFPlayer] Boot wait; initial voice state is stopped."));
 }
 
-bool DfPlayerController::enqueue(uint8_t voiceId) {
-  if (count_ == sizeof(queue_)) return false;
-  queue_[(head_ + count_) % sizeof(queue_)] = voiceId;
-  ++count_;
-  return true;
+void DfPlayerController::setVoice(uint8_t voiceId) {
+  pendingVoice_ = voiceId;
+  voicePending_ = true;
 }
 
 bool DfPlayerController::send(uint8_t command, uint16_t argument) {
@@ -60,11 +59,10 @@ void DfPlayerController::update() {
     }
     return;
   }
-  if (count_ == 0) return;
-  const uint8_t voice = queue_[head_];
+  if (!voicePending_) return;
+  const uint8_t voice = pendingVoice_;
   if (!send(voice == 0 ? 0x16 : 0x12, voice)) return;
-  head_ = (head_ + 1) % sizeof(queue_);
-  --count_;
+  voicePending_ = false;
   if (voice == 0) log_->println(F("[VOICE] Stop"));
   else {
     log_->print(F("[VOICE] Play ID="));

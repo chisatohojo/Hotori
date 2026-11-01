@@ -49,6 +49,7 @@ class HardwareSerial : public Print {
   std::deque<uint8_t> rx;
   std::vector<uint8_t> tx;
   int room = 64;
+  void (*onRead)() = nullptr;
   uint32_t baud = 0;
   uint8_t format = 0;
   void begin(uint32_t value, uint8_t config = SERIAL_8N1) { baud = value; format = config; }
@@ -56,6 +57,7 @@ class HardwareSerial : public Print {
   int availableForWrite() const { return room; }
   int read() {
     if (rx.empty()) return -1;
+    if (onRead) onRead();
     const uint8_t value = rx.front(); rx.pop_front(); return value;
   }
   size_t write(uint8_t value) override {

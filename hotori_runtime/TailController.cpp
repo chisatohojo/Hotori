@@ -17,7 +17,7 @@ void TailController::begin() {
 
 uint32_t TailController::halfPeriodForSpeed(uint8_t speedPercent) {
   if (speedPercent == 0 || speedPercent > 100) return 0;
-  // Preserve fractional steps/s instead of rounding to just 76 speed levels.
+  // Preserve fractional steps/s throughout the linear interpolation.
   const uint32_t rateTimes99 = HotoriRuntimeConfig::TAIL_MIN_STEPS_PER_SECOND * 99UL +
       (HotoriRuntimeConfig::TAIL_MAX_STEPS_PER_SECOND -
        HotoriRuntimeConfig::TAIL_MIN_STEPS_PER_SECOND) * (speedPercent - 1UL);
