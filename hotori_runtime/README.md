@@ -1,5 +1,19 @@
 # Hotori runtime / 本番制御
 
+## 不正な受信データの表示
+
+Serial2で不正なデータを受信すると、USB Serial Monitor（115200 bps）へ受信バイト列を16進数で表示します。ESP32への返信は行いません。
+
+```text
+[UART ERROR] RX=12 - Invalid HEADER
+[UART ERROR] RX=AA 55 07 02 14 03 32 1E 11 - CRC mismatch
+[UART ERROR] RX=AA 55 07 - Incomplete frame (timeout)
+```
+
+ヘッダ外のバイトもエラーとして表示します。フレーム途中で受信が100 ms途切れた場合は、途中までのデータを表示して受信状態をリセットします。正常なフレーム間の無通信はエラーにしません。設定は`HotoriRuntimeConfig.h`の`UART_FRAME_TIMEOUT_MS`です。不正フレームの指示は実行しません。
+
+大量受信時は既存の固定長ログキューが溢れると行単位でログを破棄します。ログ出力のためにモータやリミット監視を待機させません。
+
 `hotori_runtime/`は、ESP32のUART指示でArduino Mega 2560の音声・呼吸・尻尾を動かす本番制御用スケッチです。`hotori_hardware_test/`はデバッグ・単体試験用として残しています。既存の3スケッチや設定ファイルは変更していません。
 
 一次仕様はプロジェクト直下の[`nekocat_ESP32_Arduino_UART_spec_v0.3.xlsx`](../nekocat_ESP32_Arduino_UART_spec_v0.3.xlsx)です。依頼文の`(1)`付きファイル名とは異なりますが、v0.3の4シートと5サンプルを読み取り、記載内容が依頼の通信仕様と一致することを確認しました。

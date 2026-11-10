@@ -26,6 +26,7 @@ constexpr uint32_t BREATH_STEPS_PER_CYCLE = 0;
 constexpr bool BREATH_USES_FORWARD = true;
 
 constexpr uint32_t DEBUG_BAUD_RATE = 115200UL;
+constexpr uint32_t UART_FRAME_TIMEOUT_MS = 100;
 constexpr uint32_t ESP32_BAUD_RATE = 115200UL;
 constexpr uint32_t DFPLAYER_BAUD_RATE = 9600UL;
 constexpr uint8_t DFPLAYER_VOLUME = 20;

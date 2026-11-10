@@ -22,10 +22,20 @@ UartFrameReceiver receiver;
 RuntimeCommand receivedCommand = {};
 bool voicePending = false;
 uint8_t pendingVoice = 0;
+uint32_t lastUartByteMs = 0;
 
 void reportUartError(UartFrameReceiver::Result result) {
   runtimeLog.print(F("[UART ERROR] "));
+  runtimeLog.print(F("RX="));
+  for (uint8_t i = 0; i < receiver.errorLength(); ++i) {
+    const uint8_t value = receiver.errorBytes()[i];
+    if (value < 16) runtimeLog.print('0');
+    runtimeLog.print(value, HEX);
+    runtimeLog.print(' ');
+  }
+  runtimeLog.print(F("- "));
   switch (result) {
+    case UartFrameReceiver::TruncatedFrame: runtimeLog.println(F("Incomplete frame (timeout)")); break;
     case UartFrameReceiver::InvalidHeader: runtimeLog.println(F("Invalid HEADER")); break;
     case UartFrameReceiver::CrcMismatch: runtimeLog.println(F("CRC mismatch")); break;
     case UartFrameReceiver::InvalidFlags: runtimeLog.println(F("Invalid FLAGS")); break;
@@ -75,11 +85,16 @@ void loop() {
   if (voicePending) {
     if (dfPlayer.enqueue(pendingVoice)) voicePending = false;
   } else if (Serial2.available() > 0) {
+    lastUartByteMs = millis();
     // One byte per pass: no input flood can monopolize STEP/limit servicing.
     const UartFrameReceiver::Result result =
         receiver.feed(static_cast<uint8_t>(Serial2.read()), receivedCommand);
     if (result == UartFrameReceiver::Valid) applyCommand(receivedCommand);
     else if (result != UartFrameReceiver::Incomplete) reportUartError(result);
+  } else if (static_cast<uint32_t>(millis() - lastUartByteMs) >=
+             HotoriRuntimeConfig::UART_FRAME_TIMEOUT_MS) {
+    const UartFrameReceiver::Result result = receiver.expire();
+    if (result != UartFrameReceiver::Incomplete) reportUartError(result);
   }
 
   tail.update();

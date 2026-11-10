@@ -1,6 +1,18 @@
 #include "UartFrameReceiver.h"
 
-UartFrameReceiver::UartFrameReceiver() : buffer_{}, length_(0) {}
+UartFrameReceiver::UartFrameReceiver() : buffer_{}, length_(0), errorBytes_{}, errorLength_(0) {}
+
+void UartFrameReceiver::captureError() {
+  errorLength_ = length_;
+  for (uint8_t i = 0; i < length_; ++i) errorBytes_[i] = buffer_[i];
+}
+
+UartFrameReceiver::Result UartFrameReceiver::expire() {
+  if (length_ == 0) return Incomplete;
+  captureError();
+  length_ = 0;
+  return TruncatedFrame;
+}
 
 uint8_t UartFrameReceiver::crc8(const uint8_t* data, size_t length) {
   uint8_t crc = 0;
@@ -47,14 +59,20 @@ void UartFrameReceiver::resynchronize() {
 UartFrameReceiver::Result UartFrameReceiver::feed(uint8_t value,
                                                 RuntimeCommand& command) {
   if (length_ == 0) {
-    if (value == 0xAA) buffer_[length_++] = value;
-    return Incomplete;
+    buffer_[length_++] = value;
+    if (value == 0xAA) return Incomplete;
+    captureError();
+    length_ = 0;
+    return InvalidHeader;
   }
   if (length_ == 1) {
     if (value == 0x55) {
       buffer_[length_++] = value;
       return Incomplete;
     }
+    buffer_[1] = value;
+    length_ = 2;
+    captureError();
     length_ = value == 0xAA ? 1 : 0;
     return InvalidHeader;
   }
@@ -63,6 +81,7 @@ UartFrameReceiver::Result UartFrameReceiver::feed(uint8_t value,
 
   const Result result = validate();
   if (result != Valid) {
+    captureError();
     resynchronize();
     return result;
   }

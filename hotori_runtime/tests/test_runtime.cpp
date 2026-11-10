@@ -37,6 +37,21 @@ UartFrameReceiver::Result feed(UartFrameReceiver& parser, RuntimeCommand& comman
 }
 
 void crcAndParser() {
+  {
+    UartFrameReceiver parser;
+    RuntimeCommand command = {};
+    CHECK(parser.feed(0x12, command) == UartFrameReceiver::InvalidHeader);
+    CHECK(parser.errorLength() == 1 && parser.errorBytes()[0] == 0x12);
+    CHECK(parser.feed(0xAA, command) == UartFrameReceiver::Incomplete);
+    CHECK(parser.feed(0x13, command) == UartFrameReceiver::InvalidHeader);
+    CHECK(parser.errorLength() == 2 && parser.errorBytes()[0] == 0xAA &&
+          parser.errorBytes()[1] == 0x13);
+    CHECK(feed(parser, command, {0xAA, 0x55, 7}) == UartFrameReceiver::Incomplete);
+    CHECK(parser.expire() == UartFrameReceiver::TruncatedFrame);
+    CHECK(parser.errorLength() == 3 && parser.errorBytes()[2] == 7);
+    CHECK(parser.expire() == UartFrameReceiver::Incomplete);
+    CHECK(feed(parser, command, frame()) == UartFrameReceiver::Valid);
+  }
   const uint8_t samples[5][9] = {
     {0xAA,0x55,0x07,0x02,0x14,0x03,0x32,0x1E,0x10},
     {0xAA,0x55,0x01,0x03,0x00,0x00,0x00,0x00,0x8F},
@@ -77,6 +92,8 @@ void crcAndParser() {
     RuntimeCommand command = {7,11,12,2,88,44};
     const RuntimeCommand original = command;
     CHECK(feed(parser, command, test.bytes) == test.error);
+    CHECK(parser.errorLength() == test.bytes.size());
+    CHECK(std::equal(test.bytes.begin(), test.bytes.end(), parser.errorBytes()));
     CHECK(std::memcmp(&command, &original, sizeof(command)) == 0);
     CHECK(feed(parser, command, frame()) == UartFrameReceiver::Valid);
   }
