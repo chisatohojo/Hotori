@@ -4,38 +4,30 @@
     {
       "label": "Hotori: Build hardware test",
       "type": "process",
-      "command": "powershell.exe",
-      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/build.ps1"],
+      "command": "${env:USERPROFILE}/.platformio/penv/Scripts/pio.exe",
+      "args": ["run", "-e", "nano_new"],
       "group": { "kind": "build", "isDefault": true },
       "problemMatcher": "$gcc"
     },
     {
-      "label": "Hotori: Build all sketches",
+      "label": "Hotori: Upload hardware test",
       "type": "process",
-      "command": "powershell.exe",
-      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/build.ps1", "-Sketch", "all"],
-      "group": "build",
-      "problemMatcher": "$gcc"
-    },
-    {
-      "label": "Hotori: Setup dependencies",
-      "type": "process",
-      "command": "powershell.exe",
-      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/setup.ps1"],
+      "command": "${env:USERPROFILE}/.platformio/penv/Scripts/pio.exe",
+      "args": ["run", "-e", "nano_new", "-t", "upload", "--upload-port", "${input:serialPort}"],
       "problemMatcher": []
     },
     {
       "label": "Hotori: List boards",
       "type": "process",
-      "command": "arduino-cli",
-      "args": ["board", "list"],
+      "command": "${env:USERPROFILE}/.platformio/penv/Scripts/pio.exe",
+      "args": ["device", "list"],
       "problemMatcher": []
     },
     {
       "label": "Hotori: Serial monitor (115200)",
       "type": "process",
-      "command": "arduino-cli",
-      "args": ["monitor", "-p", "${input:serialPort}", "-c", "baudrate=115200"],
+      "command": "${env:USERPROFILE}/.platformio/penv/Scripts/pio.exe",
+      "args": ["device", "monitor", "-e", "nano_new", "--port", "${input:serialPort}"],
       "problemMatcher": []
     }
   ],
@@ -43,7 +35,7 @@
     {
       "id": "serialPort",
       "type": "promptString",
-      "description": "Enter the Mega 2560 port from 'Hotori: List boards' (for example COM4)"
+      "description": "Enter the Nano port from 'Hotori: List boards' (for example COM5)"
     }
   ]
 }

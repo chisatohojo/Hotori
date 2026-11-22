@@ -4,9 +4,8 @@
 
 DfPlayerController::DfPlayerController() : log_(nullptr), ready_(false) {}
 
-bool DfPlayerController::begin(HardwareSerial& serialPort, Stream& log) {
+bool DfPlayerController::begin(Stream& serialPort, Stream& log) {
   log_ = &log;
-  serialPort.begin(HotoriConfig::DFPLAYER_BAUD_RATE);
 
   // ACK is enabled so communication failures can be reported. The module is
   // reset during initialization, as recommended by the library.

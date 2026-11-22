@@ -19,8 +19,14 @@ if ($Sketch -eq 'all') {
 foreach ($sketchName in $sketches) {
     $sketchPath = Join-Path $projectRoot $sketchName
     $buildPath = Join-Path $projectRoot "build/$sketchName"
-    Write-Host "Building $sketchName for Arduino Mega 2560..."
-    & arduino-cli compile --fqbn 'arduino:avr:mega:cpu=atmega2560' --warnings all --build-path $buildPath $sketchPath
+    # hotori_hardware_test runs on the Arduino Nano. The other sketches are
+    # older tests kept for history.
+    $fqbn = 'arduino:avr:mega:cpu=atmega2560'
+    if ($sketchName -eq 'hotori_hardware_test') {
+        $fqbn = 'arduino:avr:nano:cpu=atmega328'
+    }
+    Write-Host "Building $sketchName ($fqbn)..."
+    & arduino-cli compile --fqbn $fqbn --warnings all --build-path $buildPath $sketchPath
     if ($LASTEXITCODE -ne 0) {
         throw "Build failed: $sketchName (exit code $LASTEXITCODE)."
     }

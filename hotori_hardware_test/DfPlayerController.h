@@ -7,7 +7,8 @@ class DfPlayerController {
  public:
   DfPlayerController();
 
-  bool begin(HardwareSerial& serialPort, Stream& log);
+  // serialPort must already be started at DFPLAYER_BAUD_RATE.
+  bool begin(Stream& serialPort, Stream& log);
   void playMp3(uint16_t trackNumber);
   void stop();
   void update();

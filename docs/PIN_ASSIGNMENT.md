@@ -1,74 +1,130 @@
 # Hotori Pin Assignment
 
-この文書をHotori（夢卵）プロジェクトの正式なピンアサイン資料とします。
+この文書をHotori（夢卵）プロジェクトの正式なピンアサイン資料とします。マイコンはArduino Nano（ATmega328P）です。ピン番号の定義は`hotori_hardware_test/HotoriConfig.h`にあります。
 
-## Arduino Mega 2560
+## モータ構成
 
-### Motor1 / Tail
+ステッピングモータは5台で、すべてTMC2209で駆動します。
 
-| Signal | Mega Pin | Device |
-|---|---|---|
-| STEP | D8 | TMC2209 #1 STEP |
-| DIR | D9 | TMC2209 #1 DIR |
-| EN | D10 | TMC2209 #1 EN |
+| Motor | 部位 | 制御方式 | リミットスイッチ |
+|---|---|---|---|
+| Motor1 | 頭の左右 | STEP / DIR + UART（StealthChop、静音） | 左右2個を並列で1入力 |
+| Motor2 | 頭の上下 | STEP / DIR + UART（StealthChop、静音） | 上下2個を並列で1入力 |
+| Motor3 | しっぽ | STEP / DIR + UART（StealthChop、静音） | 左右を別々の入力 |
+| Motor4 | 肋骨1（呼吸） | STEP / DIR | なし |
+| Motor5 | 肋骨2（呼吸） | STEP / DIR | なし |
 
-Motor1はしっぽ用です。
+TMC2209の番号（#1〜#5）はモータ番号と同じです。
 
-### Motor2 / Rib
+## ピン一覧
 
-| Signal | Mega Pin | Device |
-|---|---|---|
-| STEP | D22 | TMC2209 #2 STEP |
-| DIR | D23 | TMC2209 #2 DIR |
-| EN | D24 | TMC2209 #2 EN |
+モータ番号の順に、D3から STEP（奇数）→ DIR（偶数）の連番で割り当てます。
 
-Motor2は肋骨／呼吸機構用です。
+| Motor | STEP | DIR |
+|---|---:|---:|
+| Motor1 / 頭の左右 | D3 | D4 |
+| Motor2 / 頭の上下 | D5 | D6 |
+| Motor3 / しっぽ | D7 | D8 |
+| Motor4 / 肋骨1 | D9 | D10 |
+| Motor5 / 肋骨2 | D11 | D12 |
 
-### Tail Limit Switch
-
-| Function | Mega Pin | Connection |
+| Function | Nano Pin | 接続先 |
 |---|---:|---|
-| Tail Left Limit | D25 | NC switch -> GND |
-| Tail Right Limit | D26 | NC switch -> GND |
+| ESP32 受信 | D0 / RX | ESP32 TX（115,200 bps）。USBと共用 |
+| USB ログ | D1 / TX | USBシリアル（ESP32へは接続しない） |
+| EN（5台共用） | D2 | TMC2209 #1〜#5 EN |
+| Servo Power | D13 | サーボ電源スイッチの制御入力（HIGH = ON） |
+| TMC UART | A0 | TMC2209 #1〜#3 PDN_UART（1本にまとめて直結） |
+| Servo Signal | A1 | SG90 信号線（橙） |
+| 頭の左右リミット | A2 | 左右2個を並列 → GND |
+| 頭の上下リミット | A3 | 上下2個を並列 → GND |
+| しっぽ左リミット | A4 | スイッチ → GND |
+| しっぽ右リミット | A5 | スイッチ → GND |
 
-配線:
+空きピンはありません（A6 / A7はアナログ入力専用で内蔵プルアップがないため、スイッチには使えません）。
+
+## EN（5台共用）
+
+ENは1本のピンを5台のTMC2209で共用します。LOWで有効、HIGHで無効です。
+
+- どれか1台が動作中、または原点合わせが終わった頭が角度を保持している間はLOW（有効）になります。
+- このため、Motor4 / 5を停止しても、他のモータが動作中ならENは有効のままです。STEPは止まりますが通電は続きます。
+- Motor3（しっぽ）は、停止時にUARTでドライバの出力を切ります（TOFF = 0）。
+- Motor1 / 2（頭）は、停止しても角度を保つため出力を切りません。
+
+## TMC2209 UART（Motor1〜3）
+
+3台のPDN_UARTを1本にまとめ、A0へ直接つなぎます。A0は送信と受信を切り替えて使います（1線、57,600 bps）。直列抵抗は不要です。
 
 ```text
-Mega D25 -> Left NC -> Left COM -> GND
-Mega D26 -> Right NC -> Right COM -> GND
+Nano A0 ──┬── TMC2209 #1 PDN_UART
+          ├── TMC2209 #2 PDN_UART
+          └── TMC2209 #3 PDN_UART
 ```
 
-Mega D25とD26は両方`INPUT_PULLUP`として使用します。左右スイッチのCOM側GNDは共通で構いません。NC（Normally Closed）接点を使用するため、各入力の状態は次のとおりです。
+アドレスはMS1 / MS2で決めます（アドレス = MS1 + 2 × MS2）。
 
-- LOW = Normal（通常）
-- HIGH = Limit active / wire disconnected（リミットスイッチ押下／配線断線、安全側）
+| TMC2209 | MS1 | MS2 | UARTアドレス |
+|---|---|---|---:|
+| #1 頭の左右 | GND | GND | 0 |
+| #2 頭の上下 | VIO | GND | 1 |
+| #3 しっぽ | GND | VIO | 2 |
 
-左右どちらか一方でもHIGHを検出したら、Motor1の移動方向（Forward / Reverse）に依存せず、デバウンス待ちなしで`motor1.stop()`を呼び出します。STEPを停止し、TMC2209 #1のENを無効化して保持トルクを解除します。両方がLOWへ戻っても自動再始動せず、次の明示的なSerialコマンドまで停止を維持します。左右どちらかがHIGHの間は`m1f` / `m1r`の両方を拒否します。ログではLeft / Right / Bothを区別します。
+TMC2209のUARTは、VM（モータ電源）が入っていないと応答しません。Nanoを先に起動した場合は、モータ電源を入れてから`tmc`コマンドで再設定します。通信の確認には`uart` / `uartw`コマンドを使います（[hotori_hardware_test/README.md](../hotori_hardware_test/README.md)）。
 
-### DFPlayer Mini
+Motor4 / 5のTMC2209はUARTを使わず、MS1 / MS2のピン設定（未接続なら1/8ステップ）で動きます。
 
-| Mega | DFPlayer |
+## リミットスイッチ
+
+すべて抵抗を使わず、スイッチの片側をNanoのピン、もう片側をGNDにつなぎます。Nanoの内蔵プルアップを使います。
+
+- 押していない = HIGH、押した = LOW（`LIMIT_ACTIVE_LEVEL = LOW`）
+- 並列にしたスイッチは、どちらか一方を押せばLOWになります。このため、常時開（NO、押すと導通）のスイッチを使います。常時閉（NC）のスイッチを並列にすると、片方を押してもLOWのままで検出できません。
+- 配線が外れると「押していない」と同じになり、止まりません。配線の確認を確実に行ってください。
+- `ENABLE_LIMIT_SWITCHES = 0`にすると、すべてのリミットを無視します（頭は起動時の位置を0°とします）。
+
+### 頭（並列）
+
+頭の左右と上下は、それぞれ両端の2個を並列にして1本の入力にしています。どちらの端が押されたかは、その時の移動方向で判断します。
+
+- 移動中にスイッチが押されたら直ちに止まり、角度をその端の値に補正します。
+- 押されたスイッチから離れる向きには動けます（退避）。20°動いてもまだ押されていれば、反対側のスイッチとみなして止まります。
+- 押されたスイッチへ向かう開始は拒否します。
+- 起動時に、max側のスイッチまで動いて原点合わせをします。
+
+詳しい動作は[hotori_hardware_test/README.md](../hotori_hardware_test/README.md)を参照してください。
+
+### しっぽ（別々の入力）
+
+左右どちらかが押されたら、方向に関係なくしっぽを直ちに停止し、デバウンス待ちはしません。押されている間は両方向の開始を拒否し、離れても自動では再始動しません。
+
+## サーボ（SG90）
+
+| 接続 | 接続先 |
 |---|---|
-| D18 / TX1 | RX |
-| D19 / RX1 | TX |
-| 5V | VCC |
+| SG90 赤（+5V） | 電源スイッチ経由で外部5V |
+| SG90 茶（GND） | GND（Nanoと共通） |
+| SG90 橙（信号） | A1 |
+| 電源スイッチの制御入力 | D13 |
+
+- 起動時は電源OFFです。`svon`、`sv<角度>`、またはESP32のeyeStateで電源をONにします。
+- D13はNano上のLEDにもつながっているため、リセット直後のブートローダ動作中にサーボ電源が短時間ONになります。
+- マイコンのピンから直接サーボへ電源を供給しないでください。SG90は動き始めに数百mA流れるため、外部5V電源を使います。
+
+## ESP32との接続
+
+| ESP32 | Nano |
+|---|---|
+| TX | D0 / RX |
 | GND | GND |
 
-Mega TX1からDFPlayer RXへの配線には、1kΩ程度の直列抵抗を使用します。
+- 通信仕様は[ESP32_UART_PROTOCOL.md](ESP32_UART_PROTOCOL.md)を参照してください。
+- D0はUSBシリアルと共用です。プログラムの書き込み中はESP32のTX線を外してください。
+- Serial Monitorのログ（D1）はそのまま見られます。ESP32の接続中はSerial Monitorからコマンドを入力しないでください（送信が重なると両方とも壊れます）。
 
-スピーカーはDFPlayerのSPK1とSPK2の間へ接続し、どちらもGNDへ接続しません。
+## TMC2209物理配置メモ
 
-### TMC2209物理配置メモ
-
-現在使用中のモジュール:
-
-- 青いヒートシンク
-- 左側が黄色ピンヘッダ
-- 右側が黒ピンヘッダ
-- EN側が上
-- DIR側が下
-
-この向きで黄色側:
+現在使用中のモジュール（青いヒートシンク）を、EN側を上、DIR側を下にして見たときの左側（黄色ピンヘッダ）:
 
 - 上端 = EN
 - 下から2番目 = STEP
@@ -78,7 +134,7 @@ Mega TX1からDFPlayer RXへの配線には、1kΩ程度の直列抵抗を使用
 
 電源:
 
-- VIO -> Mega 5V
-- Logic GND -> Mega GND
-- VM / VMOT -> Motor external power
-- Motor power GND -> Mega GNDと共通
+- VIO → Nano 5V
+- Logic GND → Nano GND
+- VM / VMOT → モータ用外部電源
+- モータ電源GND → Nano GNDと共通

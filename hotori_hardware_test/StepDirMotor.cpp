@@ -2,15 +2,10 @@
 
 StepDirMotor::StepDirMotor(uint8_t stepPin,
                            uint8_t directionPin,
-                           uint8_t enablePin,
-                           uint8_t enableLevel,
                            uint8_t forwardLevel,
                            uint32_t stepHalfPeriodUs)
     : stepPin_(stepPin),
       directionPin_(directionPin),
-      enablePin_(enablePin),
-      enableLevel_(enableLevel),
-      disableLevel_(enableLevel == LOW ? HIGH : LOW),
       forwardLevel_(forwardLevel),
       stepHalfPeriodUs_(stepHalfPeriodUs),
       running_(false),
@@ -18,15 +13,12 @@ StepDirMotor::StepDirMotor(uint8_t stepPin,
       lastStepChangeUs_(0) {}
 
 void StepDirMotor::begin() {
-  // Preload safe output levels before changing pin direction. This avoids a
-  // brief active-LOW enable pulse while the MCU pins are being configured.
+  // Preload output levels before changing pin direction.
   digitalWrite(stepPin_, LOW);
   digitalWrite(directionPin_, forwardLevel_);
-  digitalWrite(enablePin_, disableLevel_);
 
   pinMode(stepPin_, OUTPUT);
   pinMode(directionPin_, OUTPUT);
-  pinMode(enablePin_, OUTPUT);
 }
 
 void StepDirMotor::startForward() {
@@ -38,21 +30,21 @@ void StepDirMotor::startReverse() {
 }
 
 void StepDirMotor::start(uint8_t directionLevel) {
-  // Start every run from a known STEP level before enabling the driver.
+  // Start every run from a known STEP level. The shared EN is enabled by the
+  // sketch once isRunning() becomes true.
   running_ = false;
   stepHigh_ = false;
   digitalWrite(stepPin_, LOW);
   digitalWrite(directionPin_, directionLevel);
-  digitalWrite(enablePin_, enableLevel_);
   lastStepChangeUs_ = micros();
   running_ = true;
 }
 
 void StepDirMotor::stop() {
+  // STEP stops here. The shared EN is disabled only when no motor runs.
   running_ = false;
   stepHigh_ = false;
   digitalWrite(stepPin_, LOW);
-  digitalWrite(enablePin_, disableLevel_);
 }
 
 void StepDirMotor::update() {
@@ -72,4 +64,8 @@ void StepDirMotor::update() {
 
 bool StepDirMotor::isRunning() const {
   return running_;
+}
+
+void StepDirMotor::setStepHalfPeriodUs(uint32_t stepHalfPeriodUs) {
+  stepHalfPeriodUs_ = stepHalfPeriodUs;
 }

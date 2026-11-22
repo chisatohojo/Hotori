@@ -1,393 +1,257 @@
-# Hotori / 夢卵
+# Hotori / 夢卵 hardware test
 
 Hotori（夢卵）は、猫をモチーフにしたデバイスです。体温、呼吸、鼓動、尻尾、鳴き声などを組み合わせ、生き物らしい安心感を作ることを目指しています。
 
-現在は**ハードウェア単体確認フェーズ**です。Arduino Mega 2560にTMC2209とステッピングモータを2組、DFPlayer Mini、スピーカー、microSDを接続し、最低限の実機動作を確認しています。呼吸、尻尾、鼓動、体温、タッチ反応などを統合した全体制御は今後実装する予定です。
+このスケッチ（`hotori_hardware_test`）は、Arduino Nanoで5台のステッピングモータとサーボを動かし、ESP32からの指示フレームを受けて動作するハードウェア確認用プログラムです。
 
-## 実機動作確認時の基準コミット
+- 使用マイコン: Arduino Nano（ATmega328P）
+- ビルド: PlatformIO（`platformio.ini`、環境`nano_new`）
+- 正式なピンアサイン: [`docs/PIN_ASSIGNMENT.md`](../docs/PIN_ASSIGNMENT.md)
+- ESP32との通信仕様: [`docs/ESP32_UART_PROTOCOL.md`](../docs/ESP32_UART_PROTOCOL.md)
 
-- 実機確認に使用したGitコミット: `6a1bf426384656001892b058b7bc52fbb8ebdc62`
-- コミットメッセージ: `Add dual motor and DFPlayer hardware test`
-- 使用マイコン: Arduino Mega 2560
-- 開発形式: Arduinoスケッチ
-- 現在の主スケッチ: `hotori_hardware_test/hotori_hardware_test.ino`
-- 正式なピンアサイン資料: [`docs/PIN_ASSIGNMENT.md`](../docs/PIN_ASSIGNMENT.md)
+**この構成（Nano、5モータ、並列リミット、1線UART）での実機確認はまだです。** ビルドの成功だけを確認しています。
 
-この文書では、確認状況を次のように区別します。
+## 構成
 
-- **実機確認済み**: 接続した実機で動作を確認した内容
-- **現在の実装**: ソースコードから確認できる内容
-- **予定**: まだ実装していない内容
+| Motor | 部位 | 制御 | リミットスイッチ |
+|---|---|---|---|
+| Motor1 | 頭の左右（neckLR） | STEP / DIR + UART（StealthChop、静音） | 左右2個を並列で1入力 |
+| Motor2 | 頭の上下（neckUD） | STEP / DIR + UART（StealthChop、静音） | 上下2個を並列で1入力 |
+| Motor3 | しっぽ | STEP / DIR + UART（StealthChop、静音） | 左右を別々の入力 |
+| Motor4 | 肋骨1（呼吸） | STEP / DIR | なし |
+| Motor5 | 肋骨2（呼吸） | STEP / DIR | なし |
 
-## 現在接続しているハードウェア
+ほかにSG90サーボ（まぶた）を1台、電源ON/OFFピン付きで使います。ピン番号は[`docs/PIN_ASSIGNMENT.md`](../docs/PIN_ASSIGNMENT.md)を参照してください。
 
-### 実機確認済み
+頭とうなずきの制御（ギア比、スイッチ間の角度、原点合わせ、並列スイッチの扱い、ドライバ設定）は、ESP32-S3で同じ機構を動かした参考プログラムに合わせています。
 
-- Arduino Mega 2560
-- TMC2209 × 2
-- ステッピングモータ × 2
-- Tail Limit Switch × 2（Left / Right、配線は[`docs/PIN_ASSIGNMENT.md`](../docs/PIN_ASSIGNMENT.md)を参照）
-- DFPlayer Mini
-- スピーカー
-- microSDカード
+## Serialコマンド
 
-### 予定
-
-- 呼吸機構
-- 尻尾機構
-- LRAによる鼓動
-- ヒーターとサーミスタによる体温制御
-- タッチセンサ／圧力センサ
-
-## TMC2209とステッピングモータ
-
-### Megaとの制御配線
-
-現在の実機と`HotoriConfig.h`で一致しているピン割り当てです。詳細とTail Limit Switchを含む正式な配線情報は[`docs/PIN_ASSIGNMENT.md`](../docs/PIN_ASSIGNMENT.md)を参照してください。
-
-| 対象 | TMC2209信号 | Arduino Mega 2560 |
-|---|---|---:|
-| Motor1 / Tail | STEP | D8 |
-| Motor1 / Tail | DIR | D9 |
-| Motor1 / Tail | EN | D10 |
-| Motor2 / Rib | STEP | D22 |
-| Motor2 / Rib | DIR | D23 |
-| Motor2 / Rib | EN | D24 |
-
-Motor1はしっぽ用、Motor2は肋骨／呼吸機構用です。Tail Limit Switchは左右2個（Left = D25、Right = D26）を使用し、両方`INPUT_PULLUP`とNC接点によりHIGH（押下／断線）を安全側として扱います。どちらかがHIGHなら回転方向に関係なくMotor1を停止してENを無効化し、両方がLOWへ戻っても自動再始動しません。正式な配線情報は[`docs/PIN_ASSIGNMENT.md`](../docs/PIN_ASSIGNMENT.md)を参照してください。
-
-ENはLOWアクティブです。
-
-| ENレベル | 状態 |
-|---|---|
-| LOW | ドライバ有効。モータを励磁する |
-| HIGH | ドライバ無効。モータ軸がフリーになる |
-
-### 使用中モジュールの物理配置
-
-実機で使用しているTMC2209モジュールには青いヒートシンクがあり、次の向きで確認しています。
-
-- 左側: 黄色ピンヘッダ
-- 右側: 黒ピンヘッダ
-- EN側が上
-- DIR側が下
-
-部品面を正面から見た配置メモ:
-
-```text
-                 上
-    黄色ピン       青い        黒ピン
-    ヘッダ       ヒートシンク    ヘッダ
-
-    EN   ●       ┌─────┐       ●
-         ●       │     │       ●
-         ●       │     │       ●
-         ●       │     │       ●
-    STEP ●       └─────┘       ●   ← 下から2番目
-    DIR  ●                       ●   ← 下端
-
-                 下
-```
-
-左側制御ピンは、この向きで次の位置です。
-
-- 上端: EN
-- 下から2番目: STEP
-- 下端: DIR
-
-**注意:** 実機では、この物理ピン位置を正しく接続したことでモータが回転しました。シルク印刷やピン位置を思い込みで判断せず、使用しているモジュール本体の表示と照合してください。
-
-### 電源、GND、モータ出力
-
-現在の実機構成は次のとおりです。
-
-| TMC2209側 | 接続先 |
-|---|---|
-| VIO | Mega 5V |
-| ロジックGND | Mega GND |
-| VM / VMOT | モータ用外部電源 |
-| モータ電源GND | Mega GNDと共通 |
-| 1A / 1B | モータの一方のコイルペア |
-| 2A / 2B | モータのもう一方のコイルペア |
-
-モータ用外部電源の仕様、TMC2209の電流設定値、モータ固有の定格は、このリポジトリのコードには記録されていません。実機の定格と設定を別途確認してください。
-
-### 現在の制御方式
-
-TMC2209のUART設定は使用していません。STEP、DIR、ENの3信号で制御しています。そのため、ドライバの接続状態やエラー状態をMegaから読み取ることはできません。
-
-`StepDirMotor`クラスは`micros()`を使い、`delay()`でメインループを止めずにSTEP出力を更新します。Motor1とMotor2は別々のインスタンスであり、独立して開始、方向変更、停止できます。
-
-現在の`HotoriConfig.h`の設定値:
-
-```cpp
-constexpr uint32_t MOTOR_STEP_HALF_PERIOD_US = 5000UL;
-```
-
-STEP出力は5,000µs以上ごとにHIGHとLOWを反転します。1パルスは約10,000µsなので、現在の診断用速度は**約100 step/s**です。ループ処理時間による小さな遅れは発生し得ます。
-
-過去には半周期500µs、約1,000 step/sで試験しました。停止状態から加速なしで開始する速度として高い可能性を切り分けるため、現在は約100 step/sへ落としています。
-
-## DFPlayer Mini
-
-### Megaとの配線
-
-Arduino Mega 2560のハードウェアシリアル`Serial1`を使用します。
-
-| Arduino Mega 2560 | 接続 | DFPlayer Mini |
-|---|---|---|
-| D18 / TX1 | 1kΩ程度の直列抵抗を介して接続 | RX |
-| D19 / RX1 | 直接接続 | TX |
-| 5V | 電源 | VCC |
-| GND | 共通GND | GND |
-
-通信速度は9,600bpsです。
-
-### スピーカー配線
-
-スピーカーはDFPlayer Miniの`SPK1`と`SPK2`の間へ接続します。
-
-```text
-DFPlayer SPK1 ─── スピーカー ─── DFPlayer SPK2
-```
-
-**注意:** `SPK1`と`SPK2`はスピーカー用の差動出力です。どちらもGNDへ接続しません。
-
-### 標準DFPlayer Miniのピン配置メモ
-
-部品面を見てmicroSDスロットを下にした場合の配置です。現在使用する主な端子はVCC、RX、TX、GND、SPK1、SPK2です。
-
-| 左列 | ピン | 右列 | ピン |
-|---:|---|---:|---|
-| 1 | VCC | 9 | IO1 |
-| 2 | RX | 10 | GND |
-| 3 | TX | 11 | IO2 |
-| 4 | DAC_R | 12 | ADKEY1 |
-| 5 | DAC_L | 13 | ADKEY2 |
-| 6 | SPK2 | 14 | USB+ |
-| 7 | GND | 15 | USB- |
-| 8 | SPK1 | 16 | BUSY |
-
-モジュールの製造元や互換品によって外観が異なる可能性があるため、実物のシルク印刷も確認してください。
-
-### microSDのファイル構成
-
-```text
-mp3/
-├── 0001.mp3
-└── 0002.mp3
-```
-
-統合テストではDFRobotDFPlayerMiniライブラリの`playMp3Folder()`を使用します。
-
-- `playMp3Folder(1)` → `/mp3/0001.mp3`
-- `playMp3Folder(2)` → `/mp3/0002.mp3`
-
-`hotori_hardware_test`の初期化成功時の音量は20です。DFPlayer単体確認用の`dfplayer_min_test`では音量15を設定し、起動後に`0001.mp3`を自動再生します。
-
-## 開発環境と依存ライブラリ
-
-2026年10月29日に現在の環境で確認したバージョンです。セットアップとVS Codeの使い方は[プロジェクト直下のREADME](../README.md)を参照してください。
-
-| 項目 | バージョン |
-|---|---:|
-| Arduino CLI | 1.5.1 |
-| Arduino AVR Boards | 1.8.6 |
-| DFRobotDFPlayerMini | 1.0.6 |
-
-DFRobotDFPlayerMiniが未導入の場合:
-
-```powershell
-arduino-cli lib install "DFRobotDFPlayerMini"
-```
-
-## テストプログラム
-
-### hotori_hardware_test
-
-現在の主テストです。Motor1、Motor2、DFPlayerを同じスケッチから確認できます。モータのSTEP更新、DFPlayerイベント処理、Serialコマンド受付を`loop()`から順番に呼び出しています。
-
-Serial Monitorへコマンドを1行ずつ送信します。行末は`Newline`または`Both NL & CR`を使用してください。
+Serial Monitor（115,200 bps）へ1行ずつ送ります。行末は`Newline`または`Both NL & CR`にします。
 
 | コマンド | 動作 |
 |---|---|
-| `m1f` | Motor1 / Tail Forward。左右どちらかのTail LimitがHIGHなら開始を拒否 |
-| `m1r` | Motor1 / Tail Reverse。左右どちらかのTail LimitがHIGHなら開始を拒否 |
-| `m1s` | Motor1 / Tail Stop。STEPを停止してドライバを無効化 |
-| `m2f` | Motor2 / Rib Forward。ドライバを有効化して正転 |
-| `m2r` | Motor2 / Rib Reverse。ドライバを有効化して逆転 |
-| `m2s` | Motor2 / Rib Stop。STEPを停止してドライバを無効化 |
-| `p1` | `/mp3/0001.mp3`を再生 |
-| `p2` | `/mp3/0002.mp3`を再生 |
-| `stop` | DFPlayerの再生を停止 |
-| `help` | コマンド一覧を表示 |
+| `m1f` / `m1r` / `m1s` | Motor1 / 頭の左右 正転／逆転／停止。押されているスイッチへ向かう開始は拒否。停止は角度を保持 |
+| `m2f` / `m2r` / `m2s` | Motor2 / 頭の上下 正転／逆転／停止。同上 |
+| `m3f` / `m3r` / `m3s` | Motor3 / しっぽ 正転／逆転／停止。左右どちらかのスイッチが押されていれば開始を拒否。停止でドライバ出力をOFF |
+| `m4f` / `m4r` / `m4s` | Motor4 / 肋骨1 正転／逆転／停止 |
+| `m5f` / `m5r` / `m5s` | Motor5 / 肋骨2 正転／逆転／停止 |
+| `home` | 頭の2軸の原点合わせを実行（失敗後の再実行にも使う） |
+| `pos` | 頭の2軸の状態、STEP位置、角度、スイッチの状態を表示 |
+| `svon` / `svoff` | サーボの電源ON／OFF |
+| `sv<角度>` | サーボを0〜180°へ動かす（例: `sv90`）。電源OFFなら先にON |
+| `tmc` | Motor1〜3を止め、TMC2209をUARTで設定し直す |
+| `uart` | アドレス00〜11を走査し、Motor1〜3のUARTを詳しく診断 |
+| `uartw` | UART通信モニタの開始／停止 |
+| `help` | コマンド一覧 |
 
-### dfplayer_min_test
+手動運転（`m1f`など）の速度は`MOTOR_STEP_HALF_PERIOD_US`（5,000 µs、約100 steps/s）です。
 
-DFPlayer Miniだけを確認する独立スケッチです。モータ処理は含みません。
+## ESP32からの指示
 
-1. Serialを115,200bps、Serial1を9,600bpsで開始
-2. DFPlayerの起動を1,500ms待機
-3. `dfPlayer.begin(Serial1)`を実行
-4. 初期化成功時に音量15を設定
-5. さらに500ms待機
-6. `/mp3/0001.mp3`を自動再生
-7. `loop()`でDFPlayerのエラーイベントを表示
+ESP32のTXをNanoのD0へつなぎます。D0はUSBと共用なので、Serial Monitorのテキストコマンドとフレームを同じ受信線で受けます。行の先頭に`AA`が来たらフレーム、それ以外はテキストコマンドとして扱います。**書き込みのときはESP32のTX線を外してください。**
 
-### mega_step_test
+| 変数 | 動かすもの |
+|---|---|
+| neckLR / neckUD / neckSpeed | Motor1 / Motor2（角度。速度は両方共通） |
+| tailDir / tailSpeed / tailTime | Motor3 |
+| breathRate | Motor4とMotor5（連続回転） |
+| eyeState | SG90サーボ（まぶた） |
+| voiceId | ログ表示のみ（音声出力なし） |
+| actionId / catState | ログ表示のみ |
 
-開発初期の1モータ単体確認用スケッチとして残しています。このスケッチは`EN=D8`、`STEP=D9`、`DIR=D10`を定義しており、**現在の実機配線とは一致しません**。現在の構成確認には使用せず、履歴資料として扱ってください。
+受信ログの例:
 
-## Serial Monitor
-
-`hotori_hardware_test`の`DEBUG_BAUD_RATE`は115,200bpsです。
-
-接続ポートを確認します。
-
-```powershell
-arduino-cli board list
+```text
+[HEAD LR] Move to 45.0 deg, speed 60%
+[HEAD UD] Move to -15.0 deg, speed 60%
+[ESP] Frame flags=0x08
+[ESP ERROR] RX=AA 55 08 00 ... - CRC mismatch
 ```
 
-表示されたMega 2560のポートを指定してMonitorを開きます。
+PCからのテスト送信（USB経由でそのまま届く。ESP32のTX線は外しておく）:
 
 ```powershell
-arduino-cli monitor -p COMx -c baudrate=115200
+.\scripts\send_esp_frame.ps1 -Port COM5 -Neck -NeckLR 45 -NeckUD -15 -NeckSpeed 60
+.\scripts\send_esp_frame.ps1 -Port COM5 -Tail -TailDir 3 -TailSpeed 50 -TailTime 30
+.\scripts\send_esp_frame.ps1 -Port COM5 -Eye -EyeState 1
 ```
 
-`COMx`は例です。実際のCOM番号はPCや接続状態によって変わるため、必ず`board list`の結果を使用してください。アップロード前にはArduino IDEや別のSerial Monitorを閉じ、ポートを解放します。
+ポートを開くとボードがリセットされることがあるため、スクリプトは送信前に2.5秒待ちます（`-WaitMs`で変更）。COM番号は接続ごとに確認してください。
 
-## コンパイルと書き込み
+## 頭（Motor1 / Motor2）
 
-Arduino Mega 2560のFQBNは`arduino:avr:mega`です。以下はリポジトリ直下で実行します。
+### 並列スイッチと原点合わせ
 
-### 統合ハードウェアテスト
+各軸の両端のスイッチは並列で1本の入力につながっているため、どちらの端が押されたかは移動方向で判断します。
+
+1. 起動時（または`home`）に、max側へゆっくり動く。
+2. スイッチが押されたら止まり、その位置をmax側のスイッチ角度とする（原点合わせ完了）。
+3. 0°（またはESP32から受けた角度）へ移動する。
+
+- 移動中にスイッチが押されたら直ちに止まり、角度をその端の値に補正します。
+- 押されたスイッチから離れる向きには動けます（退避）。`LIMIT_ESCAPE_MAX_DEGREES`（20°）動いてもまだ押されていれば、反対側のスイッチとみなして止まります。
+- 押されたスイッチへ向かう開始は拒否します。
+- 起動時にスイッチが押されていた場合は、どちらの端か分からないため、max側へ動いてスイッチが離れるか確かめます。20°以内に離れなければ失敗として止まります。
+- max側のスイッチが`HOMING_MAX_DEGREES`（270°）以内に見つからない場合も失敗です。原因を直して`home`を送ります。
+- 原点合わせのあとは、角度を保つため共用ENを有効のままにします（`HEAD_HOLD_POSITION`）。この間は5台すべてのドライバに通電します。
+
+### 設定（`HotoriConfig.h`）
+
+| 設定 | 値 | 内容 |
+|---|---:|---|
+| `HEAD_LR_STEPS_PER_DEGREE` | 11.26 | 200 × 1/8 ÷ 360 × ギア比38/15 |
+| `HEAD_UD_STEPS_PER_DEGREE` | 19.26 | 200 × 1/8 ÷ 360 × ギア比65/15 |
+| `HEAD_LR_MIN/MAX_SWITCH_ANGLE` | -62.8 / 62.8 | スイッチ間の実測125.6° |
+| `HEAD_UD_MIN/MAX_SWITCH_ANGLE` | -47.3 / 47.3 | スイッチ間の実測94.6°。**中央（0°）の位置は仮** |
+| `HEAD_SWITCH_MARGIN_DEGREES` | 2 | 指示角度をスイッチの手前で止める余裕。左右は実質±60.8°まで |
+| `HEAD_MIN/MAX_STEPS_PER_SECOND` | 100 / 667 | neckSpeed 1〜100%の巡航速度 |
+| `HEAD_START_STEPS_PER_SECOND` / `HEAD_RAMP_STEPS` | 400 / 800 | 加速・減速（台形） |
+| `HEAD_LR/UD_FORWARD_LEVEL` | HIGH | 角度が増える向きのDIRレベル。向きが逆なら反転する |
+
+1°あたりのSTEP数は、UARTで1/8マイクロステップに設定できたときの値です。UARTの設定に失敗すると、ドライバはMS1/MS2のピンで決まる分割で動くため、角度がずれます。
+
+## TMC2209（Motor1〜3）
+
+### UART
+
+3台のPDN_UARTを1本にまとめ、Nanoの**A0へ直接**つなぎます（抵抗は不要）。A0は送信と受信を切り替えて使います（TMCStepperの1線SoftwareSerial、57,600 bps）。
+
+| Motor | MS1 | MS2 | アドレス |
+|---|---|---|---:|
+| Motor1 / 頭の左右 | GND | GND | 0 |
+| Motor2 / 頭の上下 | VIO | GND | 1 |
+| Motor3 / しっぽ | GND | VIO | 2 |
+
+起動時に、次の設定を書き込んで読み返します（最大5回）。
+
+- StealthChop（静音）、256分割補間、PWM自動調整
+- 電流: 頭の左右2,000 mA（0.11 Ωでは上限約1,770 mAに丸められる）、頭の上下1,000 mA、しっぽ400 mA。停止中は半分
+- 1/8マイクロステップ
+- 回転方向はDIRピン（UARTの方向設定は使わない）
+
+応答がなければ`[ERROR] ... did not answer over UART.`を表示します。その場合もSTEP / DIRで動きますが、電流はVREF、マイクロステップはMS1/MS2で決まります。モータ電源（VM）を後から入れた場合は`tmc`を送ります。
+
+### UART通信の確認（`uart` / `uartw`）
+
+`uart`は4つのアドレス（MS2 MS1 = `00`、`01`、`10`、`11`）すべてに問い合わせ、そのあとMotor1〜3を詳しく診断します。
+
+```text
+[UART] Address scan (MS2 MS1)
+  00 addr 0 M1 Head LR : reply version=0x21
+  01 addr 1 M2 Head UD : reply version=0x21
+  10 addr 2 M3 Tail    : no reply  <- driver expected here
+  11 addr 3 ---------- : reply version=0x21  <- unexpected; check MS1/MS2
+[UART] Motor1 / Head LR (addr 0)
+  Read : OK  version=0x21
+  Write: OK  IFCNT 5 -> 6
+  Pins : ENN=1 MS1=0 MS2=0 DIR=0
+  GSTAT: reset=0 drv_err=0 uv_cp=0
+  Chop : toff=0 mres=5 (toff 0 = output off, mres 5 = 1/8 step)
+  Drv  : cs_actual=0 stealth=1 stst=1 ola=0 olb=0 s2ga=0 s2gb=0 ot=0 otpw=0
+...
+[UART] Result: M1 OK, M2 OK, M3 NG
+```
+
+この例では、しっぽのドライバがアドレス`11`で応答しています。MS1もVIOにつながっている可能性があります。
+
+| 行 | 意味 |
+|---|---|
+| `Read` | IOINレジスタを読み、CRCが正しくversionが`0x21`ならOK |
+| `Write` | GCONFを現在値のまま書き戻し、書き込み受付カウンタIFCNTが1増えればOK。設定は変わらない |
+| `Pins` | ドライバが見ているピンのレベル。`ENN=1`は共用ENがHIGH（無効） |
+| `GSTAT` | `reset=1`は電源投入後またはリセット後、`drv_err=1`は過熱・短絡、`uv_cp=1`はチャージポンプの電圧不足 |
+| `Chop` | `toff=0`は出力段オフ（停止中は正常）。動作中は`toff=5`。`mres=5`は1/8ステップ |
+| `Drv` | `cs_actual`は実際の電流スケール（0〜31）。`stealth=1`は静音モードで動作中。`stst=1`はSTEPが来ていない。`ola`/`olb`はコイル断線、`s2ga`/`s2gb`はGNDショート、`ot`/`otpw`は過熱 |
+
+`uartw`は4アドレスに0.25秒ごとに1つずつ問い合わせ、約1秒ごとに1行表示します。正常なら`00`〜`10`が`OK`、`11`が`--`です。
+
+```text
+[UART] 00 OK 12/0 | 01 OK 12/0 | 10 OK 12/0 | 11 -- 0/12
+```
+
+応答がない問い合わせでは`loop()`が約20 ms止まり、その間はSTEPの生成とリミットの確認も遅れます。モニタは診断時だけ使ってください。
+
+## しっぽ・呼吸・目
+
+| 設定（`HotoriConfig.h`） | 値 | 内容 |
+|---|---:|---|
+| `TAIL_LEFT_USES_FORWARD` | true | 「左」を正転にする。**仮の値** |
+| `TAIL_MIN/MAX_STEPS_PER_SECOND` | 25 / 100 | tailSpeed 1〜100%の速度範囲 |
+| `TAIL_SWING_HALF_PERIOD_MS` | 500 | tailDir = 3（左右交互）の反転間隔 |
+| `BREATH_STEPS_PER_CYCLE` | 1600 | 1呼吸あたりのSTEP数。**仮の値**（1/8ステップで1回転） |
+| `BREATH_RIB1/RIB2_FORWARD` | true | 肋骨の回転方向 |
+| `EYE_CLOSED_ANGLE` / `EYE_OPEN_ANGLE` | 0 / 90 | まぶたの閉／開のサーボ角度。**仮の値** |
+
+しっぽのスイッチは左右別々の入力です。どちらかが押されたら、方向に関係なくしっぽを直ちに止め、押されている間は開始を拒否し、離れても自動では再始動しません。
+
+サーボはSG90の一般的なパルス幅（0°で500 µs、180°で2,400 µs）で動かします。電源ピンは外部5Vとサーボの間のスイッチ（MOSFETなど）を操作します。UARTの通信中（数ms）は、サーボがわずかに震えることがあります。
+
+## TMC2209モジュールの物理配置
+
+青いヒートシンクのモジュールを、EN側を上、DIR側を下にして見たときの左側（黄色ピンヘッダ）の配置です。
+
+```text
+    EN   ●   ← 上端
+         ●
+         ●
+         ●
+    STEP ●   ← 下から2番目
+    DIR  ●   ← 下端
+```
+
+過去に、この物理ピン位置の認識違いで「保持トルクは入るが回転しない」問題が起きました。シルク印刷や思い込みで判断せず、モジュール本体と照合してください。
+
+| TMC2209側 | 接続先 |
+|---|---|
+| VIO | Nano 5V |
+| ロジックGND | Nano GND |
+| VM / VMOT | モータ用外部電源 |
+| モータ電源GND | Nano GNDと共通 |
+| 1A / 1B | モータの一方のコイルペア |
+| 2A / 2B | モータのもう一方のコイルペア |
+
+## ビルドと書き込み
 
 ```powershell
-arduino-cli compile --fqbn arduino:avr:mega hotori_hardware_test
-arduino-cli upload -p COMx --fqbn arduino:avr:mega hotori_hardware_test
+# ビルド
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -e nano_new
+# 書き込み（ESP32のTX線を外してから。COM番号は接続ごとに確認）
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run -e nano_new -t upload --upload-port COM5
+# Serial Monitor
+& "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" device monitor -e nano_new --port COM5
 ```
 
-### DFPlayer単体テスト
-
-```powershell
-arduino-cli compile --fqbn arduino:avr:mega dfplayer_min_test
-arduino-cli upload -p COMx --fqbn arduino:avr:mega dfplayer_min_test
-```
-
-アップロードはコンパイル成功後に行います。`COMx`は`arduino-cli board list`でMega 2560として認識されたポートへ置き換えてください。
-
-## 実機確認済み
-
-以下はコード上の想定だけではなく、現在の実機で確認済みです。
-
-- Motor1 Forward
-- Motor1 Reverse
-- Motor1 Stop
-- Motor2 Forward
-- Motor2 Reverse
-- Motor2 Stop
-- Stop時にENが無効となり、保持トルクが解除されること
-- 左右Tail LimitによるMotor1の安全停止（Left / Rightのどちらでも、Forward / Reverseに関係なく停止）
-- Limit作動時にTMC2209 #1のENが無効化され、Motor1の保持トルクが解除されること
-- スイッチを離してもMotor1が自動再始動せず、Limit作動中は`m1f` / `m1r`の両方が拒否されること
-- 左右Tail Limit対応後もMotor2とDFPlayerの既存動作に問題がないこと
-- DFPlayer Miniの起動
-- `/mp3/0001.mp3`の再生
-- `/mp3/0002.mp3`の再生
-- Mega 2560、TMC2209 × 2、ステッピングモータ × 2、DFPlayer Miniを接続した最低限の同時構成
-
-TMC2209はUARTを使用していないため、ドライバ自身の状態確認は実際のモータ動作によって行っています。
+書き込みに失敗する場合は、旧ブートローダ用の環境`nano`を試してください。
 
 ## トラブルシュート
 
 ### モータが固定されるが回転しない
 
-実際に発生した症状:
+- TMC2209側のSTEP / DIRの物理端子を確認する（上の配置図）。
+- 共用ENは、どれか1台が動いている間（または頭が角度を保持している間）は5台すべてで有効です。トルクがかかっていても、そのモータにSTEPが届いているとは限りません。
+- Motor1〜3は`uart`の`stst`で確認できます。動作中に`stst=1`ならSTEPが届いていません。
 
-- `m1f`／`m2f`などのForwardコマンドで保持トルクだけが入る
-- `m1s`／`m2s`などのStopコマンドで軸がフリーになる
-- モータは回転しない
+### 小刻みに震えて回らない
 
-今回の原因は、TMC2209モジュール側の物理ピン位置の認識違いでした。上記のモジュール配置に従ってEN、STEP、DIRの実際の位置を確認し、対応するMegaピンへ正しく接続したことで回転しました。
+- モータの4本の線のうち、どの2本が同じコイルかをテスターで確認し、1A/1Bと2A/2Bに正しくまとめる。
+- DIRの線が浮いていないか確認する。
 
-同じ症状が出た場合は、まずMega側のピン番号だけでなく、TMC2209側で配線した物理端子が本当にEN、STEP、DIRか確認してください。
+### COMポートを開けない
 
-### モータが熱くなる
+Serial Monitorなど、ほかのプログラムがCOMポートを使っていないか確認します。ESP32のTX線がD0につながったままでも書き込みに失敗します。
 
-ステッピングモータはドライバが有効で励磁されている間、停止中でも発熱します。実機でもForward中に保持トルクが入り、発熱することを確認しています。
-
-`m1s`または`m2s`を送ると、対応するENを無効化して軸をフリーにします。異常に熱くなる場合は次を確認してください。
-
-- TMC2209の電流設定
-- 長時間の連続励磁
-- 1A/1B、2A/2Bのコイルペア
-- モータと電源の定格
-- 冷却状態
-
-### DFPlayerがnot readyになる
-
-実機ではDFPlayerの電源配線を修正した後に動作しました。初期化に失敗する場合は次を確認してください。
-
-- VCCが正しく5Vへ接続されているか
-- MegaとDFPlayerのGNDが共通か
-- Mega TX1からDFPlayer RX、DFPlayer TXからMega RX1へクロス接続されているか
-- Mega TX1とDFPlayer RXの間に1kΩ程度の直列抵抗があるか
-- microSDが認識され、`mp3/0001.mp3`と`mp3/0002.mp3`が存在するか
-- `Serial1`を9,600bpsで使用しているか
-- DFPlayerの電源投入後、初期化まで十分な待ち時間があるか
-
-DFPlayerだけを切り分ける場合は`dfplayer_min_test`を使用します。このスケッチには1,500msの起動待ちがあります。
-
-### アップロード時にCOMポートを開けない
-
-Arduino IDEや`arduino-cli monitor`がCOMポートを使用していると、アクセス拒否でアップロードできません。Serial Monitorを終了し、再度`arduino-cli board list`でポートを確認してからアップロードします。
-
-## リポジトリ構成
-
-```text
-tail/
-├── .gitignore
-├── docs/
-│   └── PIN_ASSIGNMENT.md
-├── dfplayer_min_test/
-│   └── dfplayer_min_test.ino
-├── hotori_hardware_test/
-│   ├── hotori_hardware_test.ino
-│   ├── HotoriConfig.h
-│   ├── StepDirMotor.h
-│   ├── StepDirMotor.cpp
-│   ├── DfPlayerController.h
-│   ├── DfPlayerController.cpp
-│   ├── SerialCommandReader.h
-│   ├── SerialCommandReader.cpp
-│   └── README.md
-└── mega_step_test/
-    └── mega_step_test.ino
-```
+## ファイル構成
 
 | ファイル | 役割 |
 |---|---|
-| `docs/PIN_ASSIGNMENT.md` | Hotoriの正式なピンアサインと配線資料 |
-| `hotori_hardware_test/hotori_hardware_test.ino` | 各コンポーネントを生成し、初期化、Serialコマンド振り分け、毎ループの更新を行う |
-| `hotori_hardware_test/HotoriConfig.h` | ピン番号、STEP周期、Serial速度、DFPlayer音量をまとめる |
-| `hotori_hardware_test/StepDirMotor.h/.cpp` | TMC2209をSTEP、DIR、ENで非ブロッキング制御する |
-| `hotori_hardware_test/DfPlayerController.h/.cpp` | Serial1経由でDFPlayerを初期化し、再生、停止、イベント表示を行う |
-| `hotori_hardware_test/SerialCommandReader.h/.cpp` | Serial Monitorから改行区切りのコマンドを受信する |
-| `dfplayer_min_test/dfplayer_min_test.ino` | DFPlayer Miniの起動、初期化、音声再生を単体確認する |
-| `mega_step_test/mega_step_test.ino` | 初期の1モータ試験。現在の配線とはピン定義が異なるため履歴用 |
-
-## 今後の予定
-
-以下は未実装です。
-
-1. 呼吸モータの往復制御
-2. 尻尾モータの動作パターン
-3. 呼吸動作中でも尻尾とDFPlayerを並行動作できる統合制御
-4. タッチセンサ／圧力センサ入力との連携
-5. 猫の鳴き声パターン追加
-6. LRAによる鼓動
-7. ヒーターとサーミスタによる体温制御
-8. 展示用の状態管理
-9. 異常時の安全停止
-
-機能を追加する際も、モータ、音声、センサ処理が互いを長時間停止させない構成を維持します。
+| `hotori_hardware_test.ino` | 各部品の生成、初期化、Serialコマンドとフレームの振り分け、毎ループの更新 |
+| `HotoriConfig.h` | ピン番号、速度、角度、電流などの設定 |
+| `UartStepMotor.h/.cpp` | Motor1〜3。STEP / DIR出力、位置の記録、台形加減速、UARTでのドライバ設定と診断 |
+| `HeadAxis.h/.cpp` | 頭の1軸。並列スイッチでの原点合わせ、角度指示、退避 |
+| `TailController.h/.cpp` | しっぽ。ESP32の指示、手動運転、左右リミットでの停止 |
+| `StepDirMotor.h/.cpp` | Motor4 / Motor5。STEP / DIRのみの出力 |
+| `ServoController.h/.cpp` | SG90と電源ピン |
+| `EspFrameReceiver.h/.cpp` | ESP32の15 byteフレームの受信と検証 |
+| `SerialCommandReader.h/.cpp` | 改行区切りのテキストコマンドの受信 |
+| `DfPlayerController.h/.cpp` | 未使用（このボードには音声モジュール用のピンがない） |

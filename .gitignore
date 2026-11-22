@@ -9,3 +9,10 @@ build/
 # OS-generated files
 .DS_Store
 Thumbs.db
+
+# PlatformIO
+.pio/
+
+# PlatformIO-generated VS Code files (contain local paths)
+.vscode/c_cpp_properties.json
+.vscode/launch.json
