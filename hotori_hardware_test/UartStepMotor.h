@@ -4,8 +4,8 @@
 #include <TMCStepper.h>
 
 // TMC2209 driven by STEP / DIR pins. Current, microsteps, StealthChop
-// (quiet mode) and per-driver output enable (TOFF) are set over UART. The
-// hardware EN pin is shared and handled by the sketch.
+// (quiet mode) and the output on/off (TOFF) are set over UART. The driver EN
+// pin is tied to GND, so TOFF is the only way to free the shaft.
 class UartStepMotor {
  public:
   // Result of one UART diagnostic (read, write and status registers).

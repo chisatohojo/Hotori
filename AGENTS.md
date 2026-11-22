@@ -26,12 +26,12 @@
 - ピン番号、STEP周期、通信速度、角度、電流などの設定は`hotori_hardware_test/HotoriConfig.h`に集約する。
 - Motor1 / 頭の左右: STEP=D3、DIR=D4。Motor2 / 頭の上下: STEP=D5、DIR=D6。Motor3 / しっぽ: STEP=D7、DIR=D8。いずれもTMC2209のUARTでStealthChop（静音）、電流、1/8マイクロステップを設定する。回転方向はDIRピン。
 - Motor4 / 肋骨1: STEP=D9、DIR=D10。Motor5 / 肋骨2: STEP=D11、DIR=D12。UARTは使わない。
-- ENは5台共用でD2。LOWで有効、HIGHで無効。どれかが動作中、または原点合わせ後の頭が角度を保持している間は有効にする。
-- TMC2209のUARTはA0の1線（SoftwareSerial、57600 bps）。アドレスはMotor1=0（MS1 GND / MS2 GND）、Motor2=1（VIO / GND）、Motor3=2（GND / VIO）。
-- リミットスイッチは抵抗なしでGNDへ接続し、`INPUT_PULLUP`で読む。押下=LOW（NO接点）。
+- ENピンは使わない。5台ともTMC2209のENをGNDへ接続する。Motor1〜3の出力ON/OFFはUART（TOFF）で切り替える。Motor4/5は常に通電する。
+- TMC2209のUARTはSoftwareSerial（RX=A0直結、TX=A1から1kΩ経由、57600 bps）で3台のPDN_UARTを共有する。アドレスはMotor1=0（MS1 GND / MS2 GND）、Motor2=1（VIO / GND）、Motor3=2（GND / VIO）。
+- リミットスイッチは抵抗なしでGNDへ接続し、`INPUT_PULLUP`で読む。頭は押すとつながる（NO）2個の並列で押下=LOW。しっぽは押すと切れる（NC）で押下=HIGH（断線もHIGHで停止側）。
 - 頭の左右（A2）と上下（A3）は、それぞれ両端の2個を並列にした1入力。押された端は移動方向で判断し、直ちに停止して角度をその端に補正する。押されたスイッチから離れる向きの移動（最大20°）だけは許可し、押されたスイッチへ向かう開始は拒否する。起動時にmax側のスイッチで原点合わせをする。
 - しっぽのリミットは左（A4）と右（A5）の別々の入力。どちらかが押されたら方向によらず直ちに停止する。デバウンス待ちを入れず、押されている間は両方向の開始を拒否し、離れても自動再始動しない。
-- SG90サーボは信号A1、電源スイッチD13（HIGH=ON）。
+- SG90サーボは信号D2、電源スイッチD13（HIGH=ON）。
 - ESP32のTXはD0（USBシリアルと共用）。115200 bps。行頭の`AA`をフレーム、それ以外をテキストコマンドとして扱う。
 - 配線やピン割り当てを変更する依頼では、設定コードと配線資料、関連READMEを揃える。
 - `hotori_runtime`、`dfplayer_min_test`、`mega_step_test`は旧構成のスケッチ。現在の構成へ流用しない。

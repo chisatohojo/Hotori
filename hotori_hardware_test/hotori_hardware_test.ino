@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <SoftwareSerial.h>
 #include <string.h>
 
 #include "EspFrameReceiver.h"
@@ -11,18 +12,15 @@
 #include "UartStepMotor.h"
 
 // ----- TMC2209 UART drivers (Motor1-3) -----
-// All drivers share one wire on TMC_UART_PIN. Passing the same pin as RX and
-// TX makes TMCStepper switch it between sending and receiving. Address 3 is
-// unused and only probed by the 'uart' scan.
+// All drivers share one SoftwareSerial bus (RX A0, TX A1 through 1k ohm).
+// Address 3 is unused and only probed by the 'uart' scan.
 constexpr uint8_t TMC_ADDRESS_COUNT = 4;
-TMC2209Stepper tmcDriver0(HotoriConfig::TMC_UART_PIN, HotoriConfig::TMC_UART_PIN,
-                          HotoriConfig::TMC_R_SENSE_OHMS, 0);
-TMC2209Stepper tmcDriver1(HotoriConfig::TMC_UART_PIN, HotoriConfig::TMC_UART_PIN,
-                          HotoriConfig::TMC_R_SENSE_OHMS, 1);
-TMC2209Stepper tmcDriver2(HotoriConfig::TMC_UART_PIN, HotoriConfig::TMC_UART_PIN,
-                          HotoriConfig::TMC_R_SENSE_OHMS, 2);
-TMC2209Stepper tmcDriver3(HotoriConfig::TMC_UART_PIN, HotoriConfig::TMC_UART_PIN,
-                          HotoriConfig::TMC_R_SENSE_OHMS, 3);
+SoftwareSerial tmcSerial(HotoriConfig::TMC_UART_RX_PIN,
+                         HotoriConfig::TMC_UART_TX_PIN);
+TMC2209Stepper tmcDriver0(&tmcSerial, HotoriConfig::TMC_R_SENSE_OHMS, 0);
+TMC2209Stepper tmcDriver1(&tmcSerial, HotoriConfig::TMC_R_SENSE_OHMS, 1);
+TMC2209Stepper tmcDriver2(&tmcSerial, HotoriConfig::TMC_R_SENSE_OHMS, 2);
+TMC2209Stepper tmcDriver3(&tmcSerial, HotoriConfig::TMC_R_SENSE_OHMS, 3);
 TMC2209Stepper* const tmcDrivers[TMC_ADDRESS_COUNT] = {
     &tmcDriver0, &tmcDriver1, &tmcDriver2, &tmcDriver3};
 
@@ -80,28 +78,6 @@ EspFrameReceiver espReceiver;
 EspCommand espCommand = {};
 uint32_t lastEspByteMs = 0;
 
-// ----- Shared EN -----
-// One EN pin serves all five drivers, so it stays on while any motor runs or
-// a homed head holds its angle. A stopped Motor4/5 then stays energized;
-// Motor1-3 can also switch their own output off over UART (TOFF).
-bool motorEnableNeeded() {
-  return motor1.isRunning() || motor2.isRunning() || motor3.isRunning() ||
-         motor4.isRunning() || motor5.isRunning() || headLR.needsHold() ||
-         headUD.needsHold();
-}
-
-void updateMotorEnable() {
-  digitalWrite(HotoriConfig::MOTOR_ENABLE_PIN,
-               motorEnableNeeded() ? HotoriConfig::MOTOR_ENABLE_LEVEL
-                                   : HotoriConfig::MOTOR_DISABLE_LEVEL);
-}
-
-void printSharedEnableState() {
-  Serial.println(motorEnableNeeded()
-                     ? F("        Shared EN stays enabled; another motor runs or the head holds.")
-                     : F("        All motors stopped; shared EN disabled."));
-}
-
 // ----- TMC2209 configuration -----
 void configureUartMotor(UartStepMotor& motor, const __FlashStringHelper* name,
                         uint16_t currentMa) {
@@ -124,7 +100,7 @@ void configureUartMotors() {
                      HotoriConfig::TAIL_CURRENT_MA);
   if (!motor1.isConfigured() || !motor2.isConfigured() ||
       !motor3.isConfigured()) {
-    Serial.println(F("[ERROR] Check VM power, the PDN_UART wire on A0 and MS1/MS2, then send 'tmc'."));
+    Serial.println(F("[ERROR] Check VM power, the PDN_UART wiring (A0, A1 + 1k) and MS1/MS2, then send 'tmc'."));
     Serial.println(F("        Motors without UART still run by STEP/DIR on driver defaults."));
   }
 }
@@ -136,7 +112,6 @@ void startHeadManual(HeadAxis& axis, UartStepMotor& motor,
   if (!axis.manualStart(reverse)) {
     return;
   }
-  updateMotorEnable();
   Serial.print(label);
   Serial.println(reverse ? F("Reverse.") : F("Forward."));
   if (!motor.isConfigured()) {
@@ -321,7 +296,7 @@ void runUartCheck() {
   Serial.print(F(", M3 "));
   Serial.println(ok3 ? F("OK") : F("NG"));
   if (!ok1 || !ok2 || !ok3) {
-    Serial.println(F("        Check VM power, the PDN_UART wire on A0, GND and MS1/MS2."));
+    Serial.println(F("        Check VM power, the PDN_UART wiring (A0, A1 + 1k), GND and MS1/MS2."));
   }
 }
 
@@ -437,13 +412,11 @@ void handleCommand(const char* command) {
     startHeadManual(headLR, motor1, F("[Motor 1] "), reverse);
   } else if (strcmp(command, "m1s") == 0) {
     headLR.stop();
-    updateMotorEnable();
     Serial.println(F("[Motor 1] Stopped (holding)."));
   } else if (strcmp(command, "m2f") == 0 || strcmp(command, "m2r") == 0) {
     startHeadManual(headUD, motor2, F("[Motor 2] "), reverse);
   } else if (strcmp(command, "m2s") == 0) {
     headUD.stop();
-    updateMotorEnable();
     Serial.println(F("[Motor 2] Stopped (holding)."));
   } else if (strcmp(command, "m3f") == 0 || strcmp(command, "m3r") == 0) {
     if (tail.manualStart(reverse)) {
@@ -451,27 +424,20 @@ void handleCommand(const char* command) {
     }
   } else if (strcmp(command, "m3s") == 0) {
     tail.stop();
-    updateMotorEnable();
     Serial.println(F("[Motor 3] Stopped and driver output off."));
-    printSharedEnableState();
   } else if (strcmp(command, "m4f") == 0 || strcmp(command, "m4r") == 0) {
     startRibManual(motor4, F("[Motor 4] "), reverse);
   } else if (strcmp(command, "m4s") == 0) {
     motor4.stop();
-    updateMotorEnable();
-    Serial.println(F("[Motor 4] Stopped."));
-    printSharedEnableState();
+    Serial.println(F("[Motor 4] Stopped (driver stays energized)."));
   } else if (strcmp(command, "m5f") == 0 || strcmp(command, "m5r") == 0) {
     startRibManual(motor5, F("[Motor 5] "), reverse);
   } else if (strcmp(command, "m5s") == 0) {
     motor5.stop();
-    updateMotorEnable();
-    Serial.println(F("[Motor 5] Stopped."));
-    printSharedEnableState();
+    Serial.println(F("[Motor 5] Stopped (driver stays energized)."));
   } else if (strcmp(command, "home") == 0) {
     headLR.startHoming();
     headUD.startHoming();
-    updateMotorEnable();
   } else if (strcmp(command, "pos") == 0) {
     headLR.printStatus();
     headUD.printStatus();
@@ -479,7 +445,6 @@ void handleCommand(const char* command) {
     headLR.stop();
     headUD.stop();
     tail.stop();
-    updateMotorEnable();
     configureUartMotors();
   } else if (strcmp(command, "svon") == 0) {
     servo.powerOn();
@@ -575,7 +540,6 @@ void applyEspCommand(const EspCommand& command) {
   if (command.flags & EspFrameReceiver::BREATH_FLAG) {
     applyBreath(command.breathRate);
   }
-  updateMotorEnable();
   if (command.flags & EspFrameReceiver::EYE_FLAG) {
     servo.moveTo(command.eyeState ? HotoriConfig::EYE_OPEN_ANGLE
                                   : HotoriConfig::EYE_CLOSED_ANGLE);
@@ -636,11 +600,6 @@ void serviceSerialInput() {
 void setup() {
   Serial.begin(HotoriConfig::SERIAL_BAUD_RATE);
 
-  // The EN pin shared by all five drivers is disabled before anything else.
-  digitalWrite(HotoriConfig::MOTOR_ENABLE_PIN,
-               HotoriConfig::MOTOR_DISABLE_LEVEL);
-  pinMode(HotoriConfig::MOTOR_ENABLE_PIN, OUTPUT);
-
   motor1.begin();
   motor2.begin();
   motor3.begin();
@@ -652,7 +611,7 @@ void setup() {
   servo.begin();
 
   Serial.println(F("\nHotori hardware test starting..."));
-  Serial.println(F("[OK] Motor pins initialized; all drivers are disabled."));
+  Serial.println(F("[OK] Motor pins initialized. Motor 1-3 outputs turn off once UART is set."));
   Serial.println(F("[OK] Servo initialized; power off."));
 #if !ENABLE_LIMIT_SWITCHES
   Serial.println(F("[WARN] Limit switches disabled (ENABLE_LIMIT_SWITCHES=0)."));
@@ -663,9 +622,7 @@ void setup() {
   }
 #endif
 
-  for (uint8_t i = 0; i < TMC_ADDRESS_COUNT; ++i) {
-    tmcDrivers[i]->beginSerial(HotoriConfig::TMC_UART_BAUD_RATE);
-  }
+  tmcSerial.begin(HotoriConfig::TMC_UART_BAUD_RATE);
   configureUartMotors();
   printHelp();
 
@@ -687,7 +644,6 @@ void loop() {
   headLR.update();
   headUD.update();
   tail.update();
-  updateMotorEnable();
   motor1.update();
   motor2.update();
   motor3.update();

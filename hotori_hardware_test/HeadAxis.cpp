@@ -294,10 +294,6 @@ void HeadAxis::update() {
   }
 }
 
-bool HeadAxis::needsHold() const {
-  return HotoriConfig::HEAD_HOLD_POSITION && state_ == Ready;
-}
-
 void HeadAxis::printStatus() {
   logPrefix();
   switch (state_) {

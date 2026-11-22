@@ -11,8 +11,8 @@ namespace HotoriConfig {
 
 // ----- Pins -----
 // Motors follow their number: STEP = odd pin, DIR = the next even pin.
-// One EN pin is shared by all five TMC2209 drivers.
-constexpr uint8_t MOTOR_ENABLE_PIN = 2;
+// No EN pin: every TMC2209 EN is tied to GND (always enabled). Motor1-3
+// switch their output on/off over UART (TOFF).
 
 constexpr uint8_t MOTOR1_STEP_PIN = 3;   // Motor1 / Head left-right (UART)
 constexpr uint8_t MOTOR1_DIR_PIN = 4;
@@ -27,14 +27,15 @@ constexpr uint8_t MOTOR5_DIR_PIN = 12;
 
 // SG90 servo. D13 also drives the on-board LED, so the servo power blinks
 // briefly while the bootloader runs.
+constexpr uint8_t SERVO_SIGNAL_PIN = 2;
 constexpr uint8_t SERVO_POWER_PIN = 13;
-constexpr uint8_t SERVO_SIGNAL_PIN = A1;
 
-// TMC2209 UART for Motor1-3: one wire, wired straight to every PDN_UART.
-// The pin switches between sending and receiving (SoftwareSerial).
-constexpr uint8_t TMC_UART_PIN = A0;
+// TMC2209 UART for Motor1-3 over SoftwareSerial. All PDN_UART pins are tied
+// together: TX -> 1k ohm -> PDN_UART, RX -> PDN_UART directly.
+constexpr uint8_t TMC_UART_RX_PIN = A0;
+constexpr uint8_t TMC_UART_TX_PIN = A1;
 
-// Limit switches: plain switches to GND, read with INPUT_PULLUP.
+// Limit switches: switches to GND without resistors, read with INPUT_PULLUP.
 // Each head axis has two switches wired in parallel on one input, so the
 // pressed end is found from the direction of travel.
 constexpr uint8_t HEAD_LR_LIMIT_PIN = A2;   // Head left + right in parallel.
@@ -51,10 +52,12 @@ constexpr uint8_t TAIL_RIGHT_LIMIT_PIN = A5;
 #ifndef ENABLE_LIMIT_SWITCHES
 #define ENABLE_LIMIT_SWITCHES 1
 #endif
-// Parallel switches only work as normally-open contacts: pressed = LOW.
-// A broken wire reads as "not pressed".
+// Head: normally-open switches in parallel; pressing either one connects
+// the input to GND, so pressed = LOW. A broken wire reads as "not pressed".
 constexpr uint8_t LIMIT_ACTIVE_LEVEL = LOW;
-constexpr uint8_t TAIL_LIMIT_ACTIVE_LEVEL = LOW;
+// Tail: normally-closed switches; pressing opens the contact, so pressed =
+// HIGH. A broken wire also reads HIGH and stops the tail (safe side).
+constexpr uint8_t TAIL_LIMIT_ACTIVE_LEVEL = HIGH;
 
 // ----- TMC2209 UART (Motor1-3) -----
 // Address = MS1 + 2 x MS2.
@@ -79,10 +82,6 @@ constexpr uint8_t TMC_CONFIG_ATTEMPTS = 5;
 constexpr uint32_t UART_WATCH_INTERVAL_MS = 250UL;
 
 // ----- Motor common -----
-// Most TMC2209 carrier boards use LOW to enable the output stage.
-// The shared EN is on while any motor runs or a homed head holds its angle.
-constexpr uint8_t MOTOR_ENABLE_LEVEL = LOW;
-constexpr uint8_t MOTOR_DISABLE_LEVEL = HIGH;
 constexpr uint8_t MOTOR_FORWARD_LEVEL = HIGH;
 // Manual test commands (m1f etc.) step every 2 x this period.
 constexpr uint32_t MOTOR_STEP_HALF_PERIOD_US = 5000UL;
@@ -120,8 +119,6 @@ constexpr uint16_t HEAD_MAX_STEPS_PER_SECOND = 667;  // 1500 us per step.
 // Trapezoidal ramp for angle moves: start speed and ramp length.
 constexpr uint16_t HEAD_START_STEPS_PER_SECOND = 400;  // 2500 us per step.
 constexpr uint16_t HEAD_RAMP_STEPS = 800;
-// Keep the shared EN on while a homed head holds its angle.
-constexpr bool HEAD_HOLD_POSITION = true;
 
 // ----- Tail (tailDir / tailSpeed / tailTime) -----
 // Provisional: change after checking which DIR level moves the tail left.

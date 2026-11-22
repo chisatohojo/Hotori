@@ -2,8 +2,8 @@
 
 #include <Arduino.h>
 
-// STEP/DIR stepper output. The EN pin is shared by all drivers, so it is
-// switched by the sketch from isRunning() of every motor.
+// STEP/DIR stepper output for a TMC2209 without UART. Its EN is tied to GND,
+// so the driver stays energized; stop() only stops the STEP pulses.
 class StepDirMotor {
  public:
   StepDirMotor(uint8_t stepPin,

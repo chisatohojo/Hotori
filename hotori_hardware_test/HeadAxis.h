@@ -47,8 +47,6 @@ class HeadAxis {
   void update();
 
   State state() const { return state_; }
-  // True when the axis should keep the shared EN on to hold its angle.
-  bool needsHold() const;
   void printStatus();
 
  private:

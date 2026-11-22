@@ -30,8 +30,7 @@ void StepDirMotor::startReverse() {
 }
 
 void StepDirMotor::start(uint8_t directionLevel) {
-  // Start every run from a known STEP level. The shared EN is enabled by the
-  // sketch once isRunning() becomes true.
+  // Start every run from a known STEP level.
   running_ = false;
   stepHigh_ = false;
   digitalWrite(stepPin_, LOW);
@@ -41,7 +40,7 @@ void StepDirMotor::start(uint8_t directionLevel) {
 }
 
 void StepDirMotor::stop() {
-  // STEP stops here. The shared EN is disabled only when no motor runs.
+  // Only STEP stops; the driver stays energized (EN tied to GND).
   running_ = false;
   stepHigh_ = false;
   digitalWrite(stepPin_, LOW);
