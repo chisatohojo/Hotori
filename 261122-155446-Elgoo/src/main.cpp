@@ -13,14 +13,12 @@ bool isSleeping = false;
 bool returnToSleep = false;
 unsigned long returnToSleepTime = 0;
 void onTouchDetected();
-TouchSensor headSensor{13, 30, false, 0, false, false, 0, 0};
-TouchSensor chinSensor{12, 30, false, 0, false, false, 0, 0};
-TouchSensor cheekLSensor{27, 30, false, 0, false, false, 0, 0};
-TouchSensor cheekRSensor{33, 30, false, 0, false, false, 0, 0};
-TouchSensor backSensor{15, 30, false, 0, false, false, 0, 0};
-TouchSensor hipSensor{26, 30, false, 0, false, false, 0, 0};
-
-
+TouchSensor headSensor{27, 30, false, 0, false, false, 0, 0};
+TouchSensor chinSensor{14, 30, false, 0, false, false, 0, 0};
+TouchSensor cheekLSensor{12, 30, false, 0, false, false, 0, 0};
+TouchSensor cheekRSensor{13, 30, false, 0, false, false, 0, 0};
+TouchSensor backSensor{02, 30, false, 0, false, false, 0, 0};
+TouchSensor hipSensor{15, 30, false, 0, false, false, 0, 0};
 void headShort() {
 
     // 睡眠中に触られた場合
@@ -68,16 +66,16 @@ void headLong() {
 void hiphit() {
   onTouchDetected();
   Serial.println("【おしり】強くたたく");
-  sendCatCommand(0, 25, 1, 100, 2, 0, 0, 255);
-  playVoice(3);
+  sendCatCommand(6, 25, 1, 100, 2, 0, 0, 255);
+  playVoice(6);
 
 }
 
 void hiptap() {
   onTouchDetected();
   Serial.println("【おしり】弱くたたく");
-  sendCatCommand(6, 25, 3, 100, 2, 0, 15, 1);
-  playVoice(6);
+  sendCatCommand(3, 25, 3, 100, 2, 0, 15, 1);
+  playVoice(3);
 }
 
 void backShort() {
@@ -91,7 +89,7 @@ void backCont() {
   onTouchDetected();
   Serial.println("【背中】連続撫で");
   sendCatCommand(0, 15, 3, 10, 2, 0, 0, 2);
-  playVoice(4);
+  
 }
 
 void backLong() {
@@ -127,7 +125,7 @@ void chin() {
   onTouchDetected();
   Serial.println("【あご】タッチ！");
   sendCatCommand(3, 15, 0, 0, 0, 0, 20, 2);
-  playVoice(2);
+  playVoice(3);
 }
 
 
@@ -160,9 +158,7 @@ void updateReturnToSleep() {
 
         Serial.println("【睡眠】再び眠る");
 
-        sendCatCommand(
-            0, 12, 0, 0, 0,
-            90, 20, 0
+        sendCatCommand( 0, 12, 0, 0, 0, 90, 20, 0
         );
 
         isSleeping = true;
@@ -182,10 +178,10 @@ void setup() {
 }
 
 void loop() {
-  if (!isAudioConnected()) {
-      delay(100);
-      return;
-  }
+//   if (!isAudioConnected()) {
+//       delay(100);
+//       return;
+//   }
   serviceCatCommand(Serial1);
   updatehipSensor(hipSensor, hiphit, hiptap);
   update1StageSensor(chinSensor, chin);
