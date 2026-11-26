@@ -5,14 +5,12 @@
 namespace {
 
 struct CatCommand {
+    uint8_t flags;
     uint8_t voice;
     uint8_t breath;
     uint8_t tailDir;
     uint8_t tailSpeed;
     uint8_t tailTime;
-    int8_t neckLR;
-    int8_t neckUD;
-    uint8_t eyes;
 };
 
 CatCommand pendingCommand = {};
@@ -26,14 +24,12 @@ unsigned long lastSendMillis = 0;
 // 前回の指示と同じか比較
 bool sameCommand(const CatCommand& a,
                  const CatCommand& b) {
-    return a.voice == b.voice &&
+    return a.flags == b.flags &&
+           a.voice == b.voice &&
            a.breath == b.breath &&
            a.tailDir == b.tailDir &&
            a.tailSpeed == b.tailSpeed &&
-           a.tailTime == b.tailTime &&
-           a.neckLR == b.neckLR &&
-           a.neckUD == b.neckUD &&
-           a.eyes == b.eyes;
+           a.tailTime == b.tailTime;
 }
 
 // CRC-8/SMBus
@@ -59,24 +55,34 @@ uint8_t crc8Smbus(const uint8_t* data,
 
 // 送信指示を登録
 void sendCatCommand(
+    uint8_t flags,
     uint8_t voice,
     uint8_t breath,
     uint8_t tailDir,
     uint8_t tailSpeed,
-    uint8_t tailTime,
-    int8_t neckLR,
-    int8_t neckUD,
-    uint8_t eyes
+    uint8_t tailTime
 ) {
+    if (flags == 0 || (flags & 0xF8) != 0) {
+        return;
+    }
+    if ((flags & CAT_VOICE_FLAG) && voice == 255) {
+        return;
+    }
+    if ((flags & CAT_BREATH_FLAG) && breath > 60) {
+        return;
+    }
+    if ((flags & CAT_TAIL_FLAG) &&
+        (tailDir > 3 || tailSpeed > 100)) {
+        return;
+    }
+
     CatCommand next = {
+        flags,
         voice,
         breath,
         tailDir,
         tailSpeed,
-        tailTime,
-        neckLR,
-        neckUD,
-        eyes
+        tailTime
     };
 
     if (hasSentCommand &&
@@ -101,23 +107,42 @@ void serviceCatCommand(HardwareSerial& uart) {
         return;
     }
 
-    uint8_t frame[12] = {
+    if (pendingCommand.flags == 0 ||
+        (pendingCommand.flags & 0xF8) != 0) {
+        return;
+    }
+
+    if ((pendingCommand.flags & CAT_VOICE_FLAG) &&
+        pendingCommand.voice == 255) {
+        return;
+    }
+
+    if ((pendingCommand.flags & CAT_BREATH_FLAG) &&
+        pendingCommand.breath > 60) {
+        return;
+    }
+
+    if (pendingCommand.flags & CAT_TAIL_FLAG) {
+        if (pendingCommand.tailDir > 3 ||
+            pendingCommand.tailSpeed > 100) {
+            return;
+        }
+    }
+
+    uint8_t frame[9] = {
         0xAA,
         0x55,
-        0x1F,
+        pendingCommand.flags,
         pendingCommand.voice,
         pendingCommand.breath,
         pendingCommand.tailDir,
         pendingCommand.tailSpeed,
         pendingCommand.tailTime,
-        static_cast<uint8_t>(pendingCommand.neckLR),
-        static_cast<uint8_t>(pendingCommand.neckUD),
-        pendingCommand.eyes,
         0x00
     };
 
-    // Byte 3〜11の9バイトをCRC対象にする
-    frame[11] = crc8Smbus(&frame[2], 9);
+    // Byte 3〜8の6バイトをCRC対象にする
+    frame[8] = crc8Smbus(&frame[2], 6);
 
     uart.write(frame, sizeof(frame));
 

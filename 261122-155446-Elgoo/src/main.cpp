@@ -27,8 +27,8 @@ void headShort() {
 
         // 起きて一瞬目を開ける
         sendCatCommand(
-            1, 15, 0, 0, 0,
-            90, 35, 255
+            CAT_VOICE_FLAG | CAT_BREATH_FLAG,
+            1, 15
         );
 
         playVoice(1);
@@ -46,8 +46,8 @@ void headShort() {
     Serial.println("【頭】短くタッチ");
 
     sendCatCommand(
-        1, 20, 3, 100, 2,
-        90, 40, 1
+        CAT_VOICE_FLAG | CAT_BREATH_FLAG | CAT_TAIL_FLAG,
+        1, 20, 3, 100, 30
     );
 
     playVoice(1);
@@ -59,14 +59,20 @@ void headDummy() {}
 void headLong() {
   onTouchDetected();
   Serial.println("【頭】長押し");
-  sendCatCommand(2, 15, 0, 0, 0, 0, 15, 2);
+  sendCatCommand(
+      CAT_VOICE_FLAG | CAT_BREATH_FLAG | CAT_TAIL_FLAG,
+      2, 15, 0, 0, 0
+  );
   playVoice(2);
 }
 
 void hiphit() {
   onTouchDetected();
   Serial.println("【おしり】強くたたく");
-  sendCatCommand(6, 25, 1, 100, 2, 0, 0, 255);
+  sendCatCommand(
+      CAT_VOICE_FLAG | CAT_BREATH_FLAG | CAT_TAIL_FLAG,
+      6, 25, 1, 100, 30
+  );
   playVoice(6);
 
 }
@@ -74,28 +80,40 @@ void hiphit() {
 void hiptap() {
   onTouchDetected();
   Serial.println("【おしり】弱くたたく");
-  sendCatCommand(3, 25, 3, 100, 2, 0, 15, 1);
+  sendCatCommand(
+      CAT_VOICE_FLAG | CAT_BREATH_FLAG | CAT_TAIL_FLAG,
+      3, 25, 3, 100, 30
+  );
   playVoice(3);
 }
 
 void backShort() {
   onTouchDetected();
   Serial.println("【背中】サッと1回");
-  sendCatCommand(4, 20, 3, 50, 2, 0, 10, 1);
+  sendCatCommand(
+      CAT_VOICE_FLAG | CAT_BREATH_FLAG | CAT_TAIL_FLAG,
+      4, 20, 3, 50, 30
+  );
   playVoice(4);
 }
 
 void backCont() {
   onTouchDetected();
   Serial.println("【背中】連続撫で");
-  sendCatCommand(0, 15, 3, 10, 2, 0, 0, 2);
-  
+  sendCatCommand(
+      CAT_BREATH_FLAG | CAT_TAIL_FLAG,
+      0, 15, 3, 10, 30
+  );
+
 }
 
 void backLong() {
   onTouchDetected();
   Serial.println("【背中】長押し");
-  sendCatCommand(5, 12, 0, 0, 0, 0, -15, 0);
+  sendCatCommand(
+      CAT_VOICE_FLAG | CAT_BREATH_FLAG | CAT_TAIL_FLAG,
+      5, 12, 0, 0, 0
+  );
   playVoice(5);
 }
 
@@ -105,8 +123,8 @@ void cheekL() {
     Serial.println("【左頬】すりすり");
 
     sendCatCommand(
-        0, 20, 1, 10, 2,
-        60, 30, 1
+        CAT_BREATH_FLAG | CAT_TAIL_FLAG,
+        0, 20, 1, 10, 30
     );
 }
 
@@ -115,8 +133,8 @@ void cheekR() {
     Serial.println("【右頬】嫌がって顔を逸らす");
 
     sendCatCommand(
-        0, 25, 2, 80, 2,
-        60, 30, 255
+        CAT_BREATH_FLAG | CAT_TAIL_FLAG,
+        0, 25, 2, 80, 30
     );
 }
 
@@ -124,7 +142,10 @@ void cheekR() {
 void chin() {
   onTouchDetected();
   Serial.println("【あご】タッチ！");
-  sendCatCommand(3, 15, 0, 0, 0, 0, 20, 2);
+  sendCatCommand(
+      CAT_VOICE_FLAG | CAT_BREATH_FLAG | CAT_TAIL_FLAG,
+      3, 15, 3, 100, 255
+  );
   playVoice(3);
 }
 
@@ -144,7 +165,7 @@ void updateSleepState() {
 
         isSleeping = true;
         Serial.println("睡眠状態に移行");
-        sendCatCommand(0, 12, 0, 0, 0, 0, -10, 0);
+        sendCatCommand(CAT_BREATH_FLAG, 0, 12);
 
         // 睡眠用UART信号は後で追加
     }
@@ -158,8 +179,7 @@ void updateReturnToSleep() {
 
         Serial.println("【睡眠】再び眠る");
 
-        sendCatCommand( 0, 12, 0, 0, 0, 90, 20, 0
-        );
+        sendCatCommand(CAT_BREATH_FLAG, 0, 12);
 
         isSleeping = true;
         returnToSleep = false;
@@ -170,9 +190,9 @@ void setup() {
   Serial.begin(115200);
   Serial1.begin(115200, SERIAL_8N1, 16, 17);
   delay(1000);
-  setupAudio();
-  delay(3000);
-  playVoice(2);
+//   setupAudio();
+//   delay(3000);
+//   playVoice(2);
   lastTouchTime = millis();
   Serial.println("猫ロボット・センサー制御システム起動");
 }

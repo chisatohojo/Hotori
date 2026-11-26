@@ -39,7 +39,7 @@ void update3StageSensor(TouchSensor &sensor, void (*onShortPress)(),
     }
   } else if (sensor.isTouching) {
     sensor.isTouching = false;
-    sendCatCommand(0, 20, 0, 0, 0, 0, 0, 255);
+    sendCatCommand(CAT_BREATH_FLAG | CAT_TAIL_FLAG, 0, 20, 0, 0, 0);
   }
 }
 
@@ -56,7 +56,7 @@ void update1StageSensor(TouchSensor &sensor, void (*onPress)()) {
     }
   } else if (sensor.isTouching) {
     sensor.isTouching = false;
-    sendCatCommand(0, 20, 0, 0, 0, 0, 0, 255);
+    sendCatCommand(CAT_BREATH_FLAG | CAT_TAIL_FLAG, 0, 20, 0, 0, 0);
   }
 }
 
@@ -95,6 +95,6 @@ void updatehipSensor(TouchSensor &sensor, void (*onHit)(), void (*onTap)()) {
     }
   } else if (sensor.isTouching) {
     sensor.isTouching = false;
-    sendCatCommand(0, 20, 0, 0, 0, 0, 0, 255);
+    sendCatCommand(CAT_BREATH_FLAG | CAT_TAIL_FLAG, 0, 20, 0, 0, 0);
   }
 }
